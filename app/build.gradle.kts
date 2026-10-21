@@ -49,10 +49,10 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation(libs.kotlinx.serialization.json)
 
-    implementation("androidx.compose.material3:material3:1.4.0")
-    implementation("androidx.compose.ui:ui:1.8.0-alpha06")
-    implementation("androidx.compose.material:material-icons-extended:1.7.6")
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.material.icons.extended)
     ksp(libs.androidx.room.compiler)
 }

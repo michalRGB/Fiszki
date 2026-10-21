@@ -2,11 +2,13 @@ package com.michal.fiszki.data
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.michal.fiszki.model.LearningStatus
 
 @Entity(
     tableName = "words",
+    indices = [Index(value = ["themeId"])],
     foreignKeys = [
         ForeignKey(
             entity = ThemeEntity::class,

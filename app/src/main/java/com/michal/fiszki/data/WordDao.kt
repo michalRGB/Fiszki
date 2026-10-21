@@ -18,6 +18,9 @@ interface WordDao {
     @Query("SELECT * FROM words WHERE themeId = :themeId")
     suspend fun getWordsForThemeSuspend(themeId: Int): List<WordEntity>
 
+    @Query("SELECT * FROM words")
+    suspend fun getAllWordsSuspend(): List<WordEntity>
+
     @Query("SELECT * FROM words WHERE themeId = :themeId AND (subtheme IS NULL OR subtheme = :themeName)")
     fun getDirectWordsForTheme(themeId: Int, themeName: String): Flow<List<WordEntity>>
 

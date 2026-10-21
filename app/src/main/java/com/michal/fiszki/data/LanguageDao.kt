@@ -11,6 +11,9 @@ interface LanguageDao {
     @Query("SELECT * FROM languages")
     fun getAllLanguages(): Flow<List<LanguageEntity>>
 
+    @Query("SELECT * FROM languages")
+    suspend fun getAllLanguagesSuspend(): List<LanguageEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLanguages(languages: List<LanguageEntity>)
 

@@ -18,8 +18,8 @@ fun LanguageScreen(
     languages: List<Language>,
     onLanguageSelected: (Language) -> Unit,
     onImportRequested: () -> Unit,
-    onExportProgress: () -> Unit,
-    onImportProgress: () -> Unit
+    onBackupRequested: () -> Unit,
+    onRestoreBackupRequested: () -> Unit
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -75,22 +75,22 @@ fun LanguageScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 OutlinedButton(
-                    onClick = onExportProgress,
+                    onClick = onBackupRequested,
                     modifier = Modifier.weight(1f),
                     shape = MaterialTheme.shapes.medium
                 ) {
                     Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Export", style = MaterialTheme.typography.labelLarge)
+                    Text("Backup", style = MaterialTheme.typography.labelLarge)
                 }
                 OutlinedButton(
-                    onClick = onImportProgress,
+                    onClick = onRestoreBackupRequested,
                     modifier = Modifier.weight(1f),
                     shape = MaterialTheme.shapes.medium
                 ) {
                     Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Import", style = MaterialTheme.typography.labelLarge)
+                    Text("Restore", style = MaterialTheme.typography.labelLarge)
                 }
             }
         }

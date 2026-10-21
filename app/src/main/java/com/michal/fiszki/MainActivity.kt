@@ -4,6 +4,7 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -47,7 +48,7 @@ class MainActivity : ComponentActivity() {
         val wordRepository = WordRepository.getInstance(database.wordDao())
         val languageRepository = LanguageRepository.getInstance(database.languageDao())
         
-        val factory = MainViewModelFactory(themeRepository, wordRepository, languageRepository)
+        val factory = MainViewModelFactory(database, themeRepository, wordRepository, languageRepository)
         viewModel = ViewModelProvider(this, factory)[MainViewModel::class.java]
 
         setContent {
@@ -106,24 +107,61 @@ fun MainScreen(viewModel: MainViewModel) {
         }
     }
 
-    val progressExportLauncher = rememberLauncherForActivityResult(
+    var pendingBackup by remember { mutableStateOf<String?>(null) }
+
+    val backupExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri: Uri? ->
         uri?.let {
             scope.launch {
-                val jsonString = viewModel.exportProgress()
-                context.contentResolver.openOutputStream(it)?.bufferedWriter()?.use { it.write(jsonString) }
+                try {
+                    val jsonString = viewModel.exportBackup()
+                    context.contentResolver.openOutputStream(it)?.bufferedWriter()?.use { it.write(jsonString) }
+                    Toast.makeText(context, "Backup saved", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Could not create backup: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
 
-    val progressImportLauncher = rememberLauncherForActivityResult(
+    val backupImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            val jsonString = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { it.readText() }
-            jsonString?.let { viewModel.importProgress(it) }
+            try {
+                pendingBackup = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { it.readText() }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Could not read backup: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.backupMessages.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    pendingBackup?.let { backupJson ->
+        AlertDialog(
+            onDismissRequest = { pendingBackup = null },
+            title = { Text("Restore full backup?") },
+            text = { Text("This will replace all local data on this device with the contents of the backup.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingBackup = null
+                    viewModel.restoreBackup(backupJson)
+                }) {
+                    Text("Restore")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingBackup = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     val onLanguageSelected = { language: Language? ->
@@ -237,7 +275,7 @@ fun MainScreen(viewModel: MainViewModel) {
 
     val categories by viewModel.calculatedCategories.collectAsState()
 
-    if (isLoading && selectedLanguage != null) {
+    if (isLoading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
@@ -251,8 +289,8 @@ fun MainScreen(viewModel: MainViewModel) {
                 languages = languages,
                 onLanguageSelected = { lang -> onLanguageSelected(lang) },
                 onImportRequested = { importLauncher.launch("application/json") },
-                onExportProgress = { progressExportLauncher.launch("fiszki_progress.json") },
-                onImportProgress = { progressImportLauncher.launch("application/json") }
+                onBackupRequested = { backupExportLauncher.launch("fiszki_backup.json") },
+                onRestoreBackupRequested = { backupImportLauncher.launch("application/json") }
             )
         }
 

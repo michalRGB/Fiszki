@@ -33,7 +33,9 @@ import com.michal.fiszki.ui.stats.StatsScreen
 import com.michal.fiszki.ui.theme.FiszkiTheme
 import com.michal.fiszki.ui.themes.ThemeListScreen
 import com.michal.fiszki.ui.words.WordListScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
@@ -102,8 +104,13 @@ fun MainScreen(viewModel: MainViewModel) {
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            val jsonString = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { it.readText() }
-            jsonString?.let { viewModel.importFromJson(it) }
+            try {
+                val jsonString = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { it.readText() }
+                if (jsonString == null) Toast.makeText(context, "Could not read selected file", Toast.LENGTH_LONG).show()
+                else viewModel.importFromJson(jsonString)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Could not read file: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -115,8 +122,12 @@ fun MainScreen(viewModel: MainViewModel) {
         uri?.let {
             scope.launch {
                 try {
-                    val jsonString = viewModel.exportBackup()
-                    context.contentResolver.openOutputStream(it)?.bufferedWriter()?.use { it.write(jsonString) }
+                    withContext(Dispatchers.IO) {
+                        val jsonString = viewModel.exportBackup()
+                        val outputStream = context.contentResolver.openOutputStream(it)
+                            ?: error("Could not open the selected file for writing")
+                        outputStream.bufferedWriter().use { writer -> writer.write(jsonString) }
+                    }
                     Toast.makeText(context, "Backup saved", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     Toast.makeText(context, "Could not create backup: ${e.message}", Toast.LENGTH_LONG).show()
@@ -130,7 +141,12 @@ fun MainScreen(viewModel: MainViewModel) {
     ) { uri: Uri? ->
         uri?.let {
             try {
-                pendingBackup = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { it.readText() }
+                val inputStream = context.contentResolver.openInputStream(it)
+                if (inputStream == null) {
+                    Toast.makeText(context, "Could not open selected backup", Toast.LENGTH_LONG).show()
+                } else {
+                    pendingBackup = inputStream.bufferedReader().use { it.readText() }
+                }
             } catch (e: Exception) {
                 Toast.makeText(context, "Could not read backup: ${e.message}", Toast.LENGTH_LONG).show()
             }
@@ -138,7 +154,7 @@ fun MainScreen(viewModel: MainViewModel) {
     }
 
     LaunchedEffect(viewModel) {
-        viewModel.backupMessages.collect { message ->
+        viewModel.operationMessages.collect { message ->
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
     }
@@ -473,11 +489,9 @@ fun MainScreen(viewModel: MainViewModel) {
 
         else -> {
             val partIdx = selectedSubThemePartIndex
-            if (partIdx == null) {
-                // If no part is selected, we shouldn't be in the WordList view
-                return@MainScreen
-            }
-            
+                ?: // If no part is selected, we shouldn't be in the WordList view
+                return
+
             val subTheme = if (isBasketMode) {
                 basketThemes.getOrNull(partIdx)
             } else {
@@ -531,11 +545,7 @@ fun MainScreen(viewModel: MainViewModel) {
                         }
                     },
                     onRemoveFromBasket = { word ->
-                        viewModel.updateWordStatus(word.copy(
-                            isInBasket = false, 
-                            basketStatus = LearningStatus.UNCHECKED,
-                            basketAddedDate = null
-                        ))
+                        viewModel.removeWordFromBasket(word)
                     },
                     onClearBasket = {
                         if (subTheme.status == ThemeStatus.LEARNING_STAGE_3) {

@@ -49,6 +49,9 @@ interface ThemeDao {
     @Query("SELECT themeId, COUNT(*) as count, SUM(CASE WHEN isInBasket = 1 THEN 1 ELSE 0 END) as basketCount FROM words GROUP BY themeId")
     fun getAllWordCounts(): Flow<List<ThemeWordCount>>
 
+    @Query("DELETE FROM theme_progress WHERE themeId = -1")
+    suspend fun deleteAllBasketProgress()
+
     @Query("DELETE FROM theme_progress WHERE themeId = -1 AND partIndex = :partIndex")
     suspend fun deleteBasketProgress(partIndex: Int)
 
@@ -58,13 +61,15 @@ interface ThemeDao {
             .filter { it.partIndex > deletedIndex }
             .sortedBy { it.partIndex }
 
-        for (progress in toShift) {
-            deleteBasketProgress(progress.partIndex)
+        for ((_, partIndex) in toShift) {
+            deleteBasketProgress(partIndex)
         }
 
-        val shifted = toShift.map { it.copy(partIndex = it.partIndex - 1) }
-        insertProgressList(shifted)
+        insertProgressList(toShift.map { it.copy(partIndex = it.partIndex - 1) })
     }
+
+    @Query("DELETE FROM theme_progress WHERE themeId IN (SELECT id FROM themes WHERE language = :language)")
+    suspend fun deleteProgressForLanguage(language: String)
 
     @Query("DELETE FROM theme_progress WHERE themeId = :themeId")
     suspend fun deleteProgressForTheme(themeId: Int)

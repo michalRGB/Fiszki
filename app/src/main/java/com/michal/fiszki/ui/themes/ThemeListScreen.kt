@@ -167,7 +167,7 @@ fun InfoDialog(onDismiss: () -> Unit) {
             ) {
                 Text("The app uses a spaced repetition system to help you memorize words efficiently.")
                 
-                StageInfoItem("Learning Stages (1-5)", "Shorter intervals to build initial memory.")
+                StageInfoItem("Learning Stages (1-4)", "Shorter intervals to build initial memory.")
                 StageInfoItem("Maintenance Stages (1-3)", "Longer intervals to move words to long-term memory.")
                 
                 HorizontalDivider()
@@ -177,7 +177,6 @@ fun InfoDialog(onDismiss: () -> Unit) {
                 CooldownItem("Stage 2", "3 days")
                 CooldownItem("Stage 3", "7 days")
                 CooldownItem("Stage 4", "21 days")
-                CooldownItem("Stage 5", "21 days")
                 CooldownItem("Maintenance 1", "1 month")
                 CooldownItem("Maintenance 2", "3 months")
                 CooldownItem("Maintenance 3", "3 months")
@@ -232,7 +231,6 @@ fun OverrideDialog(
                 "Learning Stage 2",
                 "Learning Stage 3",
                 "Learning Stage 4",
-                "Learning Stage 5",
                 "Maintenance Stage 1",
                 "Maintenance Stage 2",
                 "Maintenance Stage 3",

@@ -42,8 +42,7 @@ fun StatsScreen(
                 ThemeStatus.LEARNING_STAGE_1,
                 ThemeStatus.LEARNING_STAGE_2,
                 ThemeStatus.LEARNING_STAGE_3,
-                ThemeStatus.LEARNING_STAGE_4,
-                ThemeStatus.LEARNING_STAGE_5
+                ThemeStatus.LEARNING_STAGE_4
             )) || (it.status == ThemeStatus.NOT_STARTED && it.isInProgress)
         }
         val maintenance = themes.count { it.status in listOf(

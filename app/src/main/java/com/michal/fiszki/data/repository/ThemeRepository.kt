@@ -90,12 +90,20 @@ class ThemeRepository(private val dao: ThemeDao) {
         dao.deleteProgressForTheme(themeId)
     }
 
+    suspend fun deleteAllBasketProgress() {
+        dao.deleteAllBasketProgress()
+    }
+
     suspend fun deleteBasketProgress(partIndex: Int) {
         dao.deleteBasketProgress(partIndex)
     }
 
     suspend fun shiftBasketProgress(deletedIndex: Int) {
         dao.shiftBasketProgress(deletedIndex)
+    }
+
+    suspend fun deleteProgressForLanguage(language: String) {
+        dao.deleteProgressForLanguage(language)
     }
 
     suspend fun clearAllData() {

@@ -28,7 +28,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 
@@ -146,8 +145,8 @@ class MainViewModel(
     private val _skipEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val skipEvents = _skipEvents.asSharedFlow()
 
-    private val _backupMessages = MutableSharedFlow<String>(extraBufferCapacity = 1)
-    val backupMessages = _backupMessages.asSharedFlow()
+    private val _operationMessages = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val operationMessages = _operationMessages.asSharedFlow()
 
     init {
         observeLanguages()
@@ -165,11 +164,6 @@ class MainViewModel(
         }
     }
 
-    fun onSkipRequested() {
-        viewModelScope.launch {
-            _skipEvents.emit(Unit)
-        }
-    }
 
     fun setFlashcardWords(words: List<Word>?) {
         _flashcardWords.value = words
@@ -202,16 +196,6 @@ class MainViewModel(
         _basketWords.value = emptyList()
         _progress.value = emptyMap()
         _isLoading.value = false
-    }
-
-    fun clearAllDatabaseData() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            themeRepository.clearAllData()
-            languageRepository.deleteAllLanguages()
-            selectLanguage(null)
-            _isLoading.value = false
-        }
     }
 
     private var loadJob: Job? = null
@@ -258,11 +242,12 @@ class MainViewModel(
         }
     }
 
-    fun clearBasket(words: List<Word>) {
-        viewModelScope.launch {
-            words.forEach { word ->
+
+    fun removeWordFromBasket(word: Word) {
+        viewModelScope.launch(Dispatchers.IO) {
+            database.withTransaction {
                 wordRepository.updateWord(word.copy(
-                    isInBasket = false, 
+                    isInBasket = false,
                     basketStatus = LearningStatus.UNCHECKED,
                     basketAddedDate = null
                 ))
@@ -272,49 +257,48 @@ class MainViewModel(
 
     fun advanceStage(themeId: Int, partIndex: Int, theme: Theme, wordsToReset: List<Word>, wordsToBasket: List<Word> = emptyList()) {
         viewModelScope.launch(Dispatchers.IO) {
-            themeRepository.updateProgress(themeId, partIndex, theme)
-            
-            val updatedWords = if (themeId == -1) {
-                // Resetting basket words within their basket
-                wordsToReset.map { word ->
-                    word.copy(basketStatus = LearningStatus.UNCHECKED)
+            database.withTransaction {
+                themeRepository.updateProgress(themeId, partIndex, theme)
+
+                val updatedWords = if (themeId == -1) {
+                    wordsToReset.map { word ->
+                        word.copy(basketStatus = LearningStatus.UNCHECKED)
+                    }
+                } else {
+                    val basketIds = wordsToBasket.map { it.id }.toSet()
+
+                    wordsToReset.map { word ->
+                        val movingToBasket = basketIds.contains(word.id)
+                        val inBasket = movingToBasket || word.isInBasket
+                        val bStatus = if (movingToBasket) LearningStatus.UNCHECKED else word.basketStatus
+                        val bDate = if (movingToBasket && !word.isInBasket) System.currentTimeMillis() else word.basketAddedDate
+
+                        word.copy(
+                            status = LearningStatus.UNCHECKED,
+                            isInBasket = inBasket,
+                            basketStatus = bStatus,
+                            basketAddedDate = bDate
+                        )
+                    }
                 }
-            } else {
-                val basketIds = wordsToBasket.map { it.id }.toSet()
-                
-                wordsToReset.map { word ->
-                    val movingToBasket = basketIds.contains(word.id)
-                    val inBasket = movingToBasket || word.isInBasket
-                    val bStatus = if (movingToBasket) LearningStatus.UNCHECKED else word.basketStatus
-                    val bDate = if (movingToBasket && !word.isInBasket) System.currentTimeMillis() else word.basketAddedDate
-                    
-                    word.copy(
-                        status = LearningStatus.UNCHECKED,
-                        isInBasket = inBasket,
-                        basketStatus = bStatus,
-                        basketAddedDate = bDate
-                    )
-                }
+                wordRepository.updateWords(updatedWords)
             }
-            wordRepository.updateWords(updatedWords)
         }
     }
 
     fun completeBasketPart(partIndex: Int, words: List<Word>) {
         viewModelScope.launch(Dispatchers.IO) {
-            // 1. Return words to theme in batch
-            val updatedWords = words.map { word ->
-                word.copy(
-                    isInBasket = false,
-                    basketStatus = LearningStatus.UNCHECKED,
-                    basketAddedDate = null
-                )
+            database.withTransaction {
+                wordRepository.updateWords(words.map { word ->
+                    word.copy(
+                        isInBasket = false,
+                        basketStatus = LearningStatus.UNCHECKED,
+                        basketAddedDate = null
+                    )
+                })
+                themeRepository.deleteBasketProgress(partIndex)
+                themeRepository.shiftBasketProgress(partIndex)
             }
-            wordRepository.updateWords(updatedWords)
-
-            // 2. Shift progress entries for other baskets
-            themeRepository.deleteBasketProgress(partIndex)
-            themeRepository.shiftBasketProgress(partIndex)
         }
     }
 
@@ -337,19 +321,32 @@ class MainViewModel(
                 // 1. Pre-process and Backup
                 val oldThemes = themeRepository.getThemesForLanguageSuspend(langName)
                 val oldThemesById = oldThemes.associateBy { it.id }
+                val usedThemeIds = themeRepository.getAllThemesSuspend().mapTo(mutableSetOf()) { it.id }
+                var nextThemeId = 1
+                fun allocateThemeId(): Int {
+                    while (nextThemeId in usedThemeIds) {
+                        check(nextThemeId < Int.MAX_VALUE) { "No theme IDs available" }
+                        nextThemeId++
+                    }
+                    val allocatedId = nextThemeId
+                    usedThemeIds.add(allocatedId)
+                    if (nextThemeId < Int.MAX_VALUE) nextThemeId++
+                    return allocatedId
+                }
+
                 val themeProgressMap = mutableMapOf<Pair<String, String>, List<ThemeProgressEntity>>()
                 val basketWordsMap = mutableMapOf<Triple<String, String, String>, Word>()
 
-                for (oldThemeEntity in oldThemes) {
-                    val parentThemeName = oldThemeEntity.parentId
+                for ((id, name, _, _, parentId) in oldThemes) {
+                    val parentThemeName = parentId
                         ?.let { oldThemesById[it]?.name }
-                        ?: oldThemeEntity.name
-                    val progress = themeRepository.getProgressForThemeSuspend(oldThemeEntity.id)
-                    themeProgressMap[parentThemeName to oldThemeEntity.name] = progress
+                        ?: name
+                    val progress = themeRepository.getProgressForThemeSuspend(id)
+                    themeProgressMap[parentThemeName to name] = progress
                     
-                    val words = wordRepository.getWordsForThemeSuspend(oldThemeEntity.id)
+                    val words = wordRepository.getWordsForThemeSuspend(id)
                     words.filter { it.isInBasket }.forEach { word ->
-                        basketWordsMap[Triple(parentThemeName, oldThemeEntity.name, word.original)] = word
+                        basketWordsMap[Triple(parentThemeName, name, word.original)] = word
                     }
                 }
 
@@ -359,7 +356,7 @@ class MainViewModel(
                 val allRestoredProgress = mutableListOf<ThemeProgressEntity>()
 
                 imported.themes.forEachIndexed { tIndex, iTheme ->
-                    val parentId = (langName.hashCode() + iTheme.name.hashCode()).let { if (it < 0) -it else it }
+                    val parentId = allocateThemeId()
                     
                     // Create Parent Theme
                     newThemes.add(Theme(id = parentId, name = iTheme.name, position = tIndex, parentId = null))
@@ -374,7 +371,7 @@ class MainViewModel(
                         val targetId = if (subthemeName == iTheme.name) {
                             parentId
                         } else {
-                            val subthemeId = (parentId + subthemeName.hashCode()).let { if (it < 0) -it else it }
+                            val subthemeId = allocateThemeId()
                             newThemes.add(Theme(
                                 id = subthemeId,
                                 name = subthemeName,
@@ -385,7 +382,8 @@ class MainViewModel(
                         }
                         
                         val words = subthemeWords.map { iWord ->
-                            val oldBasketWord = basketWordsMap[Triple(iTheme.name, subthemeName, iWord.original)]
+                            val basketKey = Triple(iTheme.name, subthemeName, iWord.original)
+                            val oldBasketWord = basketWordsMap[basketKey]
                             Word(
                                 themeId = targetId,
                                 original = iWord.original,
@@ -417,6 +415,7 @@ class MainViewModel(
                     }
 
                     wordRepository.deleteWordsForLanguage(langName)
+                    themeRepository.deleteProgressForLanguage(langName)
                     themeRepository.deleteThemesForLanguage(langName)
 
                     themeRepository.insertThemes(newThemes, langName)
@@ -425,6 +424,8 @@ class MainViewModel(
                     }
                     themeRepository.insertProgressList(allRestoredProgress)
                 }
+
+                _operationMessages.emit("Language imported successfully")
                 
                 if (_selectedLanguage.value?.name == language.name) {
                     loadDataForLanguage(language)
@@ -432,6 +433,7 @@ class MainViewModel(
                 
             } catch (e: Exception) {
                 e.printStackTrace()
+                _operationMessages.emit("Could not import language: ${e.message ?: "Invalid file"}")
             } finally {
                 _isLoading.value = false
             }
@@ -543,10 +545,10 @@ class MainViewModel(
                     if (restoredLanguage == null) selectLanguage(null)
                     else selectLanguage(Language(restoredLanguage.name, restoredLanguage.displayName, restoredLanguage.flag))
                 }
-                _backupMessages.emit("Backup restored successfully")
+                _operationMessages.emit("Backup restored successfully")
             } catch (e: Exception) {
                 e.printStackTrace()
-                _backupMessages.emit("Could not restore backup: ${e.message ?: "Invalid file"}")
+                _operationMessages.emit("Could not restore backup: ${e.message ?: "Invalid file"}")
             } finally {
                 _isLoading.value = false
             }

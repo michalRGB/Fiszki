@@ -178,7 +178,7 @@ fun InfoDialog(onDismiss: () -> Unit) {
                 CooldownItem("Stage 3", "7 days")
                 CooldownItem("Stage 4", "21 days")
                 CooldownItem("Maintenance 1", "1 month")
-                CooldownItem("Maintenance 2", "3 months")
+                CooldownItem("Maintenance 2", "2 months")
                 CooldownItem("Maintenance 3", "3 months")
                 CooldownItem("Completed", "Mastered! (3 months)")
             }

@@ -27,7 +27,7 @@ fun WordListScreen(
     words: List<Word>,
     isBasket: Boolean = false,
     onBack: () -> Unit,
-    onPlayFlashcards: (List<Word>, Boolean) -> Unit,
+    onPlayFlashcards: (List<Word>, Boolean, Boolean) -> Unit,
     onSaveToBasket: (List<Word>) -> Unit = {},
     onRemoveFromBasket: (Word) -> Unit = {},
     onClearBasket: () -> Unit = {}
@@ -219,7 +219,7 @@ fun WordListScreen(
                                     leadingIcon = { Icon(Icons.Default.PlayArrow, null) },
                                     onClick = {
                                         showMenu = false
-                                        onPlayFlashcards(words.drop(firstUncheckedIndex), true)
+                                        onPlayFlashcards(words.drop(firstUncheckedIndex), true, false)
                                     }
                                 )
                                 HorizontalDivider()
@@ -230,7 +230,7 @@ fun WordListScreen(
                                 leadingIcon = { Icon(Icons.Default.School, null) },
                                 onClick = {
                                     showMenu = false
-                                    onPlayFlashcards(words, false)
+                                    onPlayFlashcards(words, false, false)
                                 }
                             )
                             DropdownMenuItem(
@@ -238,7 +238,7 @@ fun WordListScreen(
                                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.Assignment, null) },
                                 onClick = {
                                     showMenu = false
-                                    onPlayFlashcards(words, true)
+                                    onPlayFlashcards(words, true, false)
                                 }
                             )
 
@@ -249,7 +249,7 @@ fun WordListScreen(
                                     leadingIcon = { Icon(Icons.Default.School, null) },
                                     onClick = {
                                         showMenu = false
-                                        onPlayFlashcards(unlearnedWords, false)
+                                        onPlayFlashcards(unlearnedWords, false, true)
                                     }
                                 )
                                 DropdownMenuItem(
@@ -257,7 +257,7 @@ fun WordListScreen(
                                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.Assignment, null) },
                                     onClick = {
                                         showMenu = false
-                                        onPlayFlashcards(unlearnedWords, true)
+                                        onPlayFlashcards(unlearnedWords, true, true)
                                     }
                                 )
                             }

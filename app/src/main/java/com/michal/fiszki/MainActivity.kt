@@ -92,6 +92,7 @@ fun MainScreen(viewModel: MainViewModel) {
     var selectedCategoryId by remember { mutableStateOf<Int?>(null) }
     var selectedSubThemePartIndex by remember { mutableStateOf<Int?>(null) }
     var isTestMode by remember { mutableStateOf(false) }
+    var isUnlearnedSession by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
     var isBasketMode by remember { mutableStateOf(false) }
 
@@ -407,10 +408,19 @@ fun MainScreen(viewModel: MainViewModel) {
             }
 
             if (subTheme != null) {
+                val allFlashcardWords = if (isBasketMode) {
+                    getWordsForBatch((selectedSubThemePartIndex ?: 0) + 1, savedUnlearnedWords)
+                } else {
+                    val themeWords = wordsMap[subTheme.id] ?: emptyList()
+                    getWordsForBatch(subTheme.categoryId + 1, themeWords).filter { !it.isInBasket }
+                }
+
                 FlashcardScreen(
                     theme = subTheme,
                     words = flashcardWords!!,
+                    allWords = allFlashcardWords,
                     isTestModeInitially = isTestMode,
+                    isUnlearnedSessionInitially = isUnlearnedSession,
                     isBasket = isBasketMode,
                     onBack = { navigateBack() },
                     onWordLearned = { word, learned ->
@@ -511,7 +521,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     words = themeWords,
                     isBasket = isBasketMode,
                     onBack = { navigateBack() },
-                    onPlayFlashcards = { selectedWords, testMode ->
+                    onPlayFlashcards = { selectedWords, testMode, isUnlearned ->
                         val isDue = subTheme.nextAvailableDate == null || subTheme.nextAvailableDate.isAvailableNow()
                         if (isDue) {
                             if (isBasketMode) {
@@ -521,6 +531,7 @@ fun MainScreen(viewModel: MainViewModel) {
                             }
                         }
                         isTestMode = testMode
+                        isUnlearnedSession = isUnlearned
                         viewModel.setFlashcardWords(selectedWords)
                     },
                     onSaveToBasket = { unlearned: List<Word> ->

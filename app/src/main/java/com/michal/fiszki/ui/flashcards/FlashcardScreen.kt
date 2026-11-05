@@ -25,6 +25,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.michal.fiszki.model.LearningStatus
 import com.michal.fiszki.model.Theme
 import com.michal.fiszki.model.ThemeStatus
 import com.michal.fiszki.model.Word
@@ -54,8 +55,10 @@ private data class ExitingFlashcard(
 fun FlashcardScreen(
     theme: Theme,
     words: List<Word>,
+    allWords: List<Word> = words,
     isTestModeInitially: Boolean,
     isBasket: Boolean = false,
+    isUnlearnedSessionInitially: Boolean = false,
     onBack: () -> Unit,
     onWordLearned: (Word, Boolean) -> Unit,
     onSessionFinished: (List<Word>, Boolean) -> Unit,
@@ -67,6 +70,7 @@ fun FlashcardScreen(
     var currentIndex by remember { mutableIntStateOf(0) }
     var isTestMode by remember { mutableStateOf(isTestModeInitially) }
     var unlearnedWordsInSession by remember { mutableStateOf(setOf<Word>()) }
+    var isUnlearnedSession by remember { mutableStateOf(isUnlearnedSessionInitially) }
     var showTranslation by remember { mutableStateOf(false) }
     var isFinished by remember { mutableStateOf(false) }
     var isFlipped by remember(isTestMode) { mutableStateOf(isTestMode) }
@@ -83,6 +87,9 @@ fun FlashcardScreen(
     val screenScope = rememberCoroutineScope()
 
     val currentWord = if (currentIndex < currentWords.size) currentWords[currentIndex] else null
+    val unlearnedWords = allWords.filter { word ->
+        (if (isBasket) word.basketStatus else word.status) != LearningStatus.LEARNED
+    }
 
     fun clearTransitionState() {
         poppedCardId = null
@@ -274,45 +281,50 @@ fun FlashcardScreen(
                         totalCount = currentWords.size,
                         isMaintenanceOrCompleted = isMaintenanceOrCompleted,
                         isBasket = isBasket,
+                        isUnlearnedSession = isUnlearnedSession,
                         onLearnAll = {
                             clearTransitionState()
-                            currentWords = words
+                            currentWords = allWords
                             currentIndex = 0
                             isTestMode = false
                             showBothGlobal = false
                             isFlipped = false
                             isFinished = false
                             unlearnedWordsInSession = emptySet()
+                            isUnlearnedSession = false
                         },
                         onTestAll = {
                             clearTransitionState()
-                            currentWords = words
+                            currentWords = allWords
                             currentIndex = 0
                             isTestMode = true
                             showBothGlobal = false
                             isFlipped = true
                             isFinished = false
                             unlearnedWordsInSession = emptySet()
+                            isUnlearnedSession = false
                         },
                         onLearnUnlearned = {
                             clearTransitionState()
-                            currentWords = unlearnedWordsInSession.toList()
+                            currentWords = unlearnedWords
                             currentIndex = 0
                             isTestMode = false
                             showBothGlobal = false
                             isFlipped = false
                             isFinished = false
                             unlearnedWordsInSession = emptySet()
+                            isUnlearnedSession = true
                         },
                         onTestUnlearned = {
                             clearTransitionState()
-                            currentWords = unlearnedWordsInSession.toList()
+                            currentWords = unlearnedWords
                             currentIndex = 0
                             isTestMode = true
                             showBothGlobal = false
                             isFlipped = true
                             isFinished = false
                             unlearnedWordsInSession = emptySet()
+                            isUnlearnedSession = true
                         },
                         onFinishSession = { onSessionFinished(unlearnedWordsInSession.toList(), false) },
                         onForceAdvance = { onSessionFinished(unlearnedWordsInSession.toList(), true) },
@@ -748,6 +760,7 @@ fun FinishedScreen(
     totalCount: Int,
     isMaintenanceOrCompleted: Boolean,
     isBasket: Boolean = false,
+    isUnlearnedSession: Boolean = false,
     onLearnAll: () -> Unit,
     onTestAll: () -> Unit,
     onLearnUnlearned: () -> Unit,
@@ -788,8 +801,17 @@ fun FinishedScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
+        if (isUnlearnedSession && !isTestMode) {
+            Button(onClick = onTestAll, modifier = Modifier.fillMaxWidth()) { Text("Test All") }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = onLearnAll, modifier = Modifier.fillMaxWidth()) { Text("Learn All") }
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedButton(onClick = onTestUnlearned, modifier = Modifier.fillMaxWidth()) { Text("Test Unlearned") }
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(onClick = onLearnUnlearned, modifier = Modifier.fillMaxWidth()) { Text("Learn Unlearned") }
+        }
         // Scenario 1: Maintenance or Mastered (Regular Theme)
-        if (isMaintenanceOrCompleted && !isBasket) {
+        else if (isMaintenanceOrCompleted && !isBasket) {
             if (isTestMode) {
                 val buttonText = if (unlearnedCount == 0) "Complete session" else "Add unlearned to the basket and proceed"
                 Button(

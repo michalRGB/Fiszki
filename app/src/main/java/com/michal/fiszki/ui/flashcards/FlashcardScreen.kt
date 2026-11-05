@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.michal.fiszki.model.Theme
 import com.michal.fiszki.model.ThemeStatus
 import com.michal.fiszki.model.Word
@@ -32,6 +33,21 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+
+private data class ExitingFlashcard(
+    val id: Int,
+    val word: Word,
+    val startX: Float,
+    val startY: Float,
+    val targetX: Float,
+    val targetY: Float,
+    val exitDurationMillis: Int,
+    val swipedRight: Boolean,
+    val isSkip: Boolean,
+    val isFlipped: Boolean,
+    val showBoth: Boolean,
+    val showTranslation: Boolean
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,28 +73,44 @@ fun FlashcardScreen(
     var showBothGlobal by remember(isTestMode) { mutableStateOf(false) }
 
     // Animation trigger states
-    var triggerSwipeRight by remember { mutableStateOf(false) }
-    var triggerSwipeLeft by remember { mutableStateOf(false) }
-    var triggerSkip by remember { mutableStateOf(false) }
-    
-    // Result pending state to avoid "jumping"
-    var pendingSwipeResult by remember { mutableStateOf<Boolean?>(null) }
-    var pendingSkip by remember { mutableStateOf(false) }
+    var poppedCardId by remember { mutableStateOf<Int?>(null) }
+    var currentCardExiting by remember { mutableStateOf(false) }
+    var interactionLocked by remember { mutableStateOf(false) }
+    var exitingCards by remember { mutableStateOf(emptyList<ExitingFlashcard>()) }
+    var nextExitId by remember { mutableIntStateOf(0) }
+    var pendingDragResult by remember { mutableStateOf<Boolean?>(null) }
+    var pendingSkipTransition by remember { mutableStateOf(false) }
+    val screenScope = rememberCoroutineScope()
 
     val currentWord = if (currentIndex < currentWords.size) currentWords[currentIndex] else null
+
+    fun clearTransitionState() {
+        poppedCardId = null
+        currentCardExiting = false
+        interactionLocked = false
+        exitingCards = emptyList()
+        pendingDragResult = null
+        pendingSkipTransition = false
+    }
     
     val isMaintenanceOrCompleted = remember(theme.status) { 
         theme.status.ordinal >= ThemeStatus.LEARNING_STAGE_4.ordinal
     }
 
     // Centralized reset for triggers and state when card changes
-    LaunchedEffect(currentIndex, currentWords) {
+    LaunchedEffect(currentIndex, currentWords, isFinished) {
+        if (isFinished) {
+            clearTransitionState()
+            return@LaunchedEffect
+        }
         // We now reset showTranslation in processResult/processSkip for better atomicity
-        triggerSwipeRight = false
-        triggerSwipeLeft = false
-        triggerSkip = false
-        pendingSwipeResult = null
-        pendingSkip = false
+        currentCardExiting = false
+        pendingDragResult = null
+        pendingSkipTransition = false
+        if (interactionLocked) {
+            withFrameNanos { }
+            interactionLocked = false
+        }
     }
 
     val processResult = { known: Boolean ->
@@ -113,23 +145,69 @@ fun FlashcardScreen(
         }
     }
 
+    fun startSwipe(
+        swipedRight: Boolean,
+        startX: Float = 0f,
+        startY: Float = 0f,
+        targetX: Float = if (swipedRight) 2500f else -2500f,
+        targetY: Float = -2500f,
+        isSkip: Boolean = false,
+        exitDurationMillis: Int = 600
+    ) {
+        val word = currentWords.getOrNull(currentIndex) ?: return
+        if (isFinished || currentCardExiting || interactionLocked) return
+
+        val hasNextCard = currentIndex < currentWords.lastIndex
+        if (isSkip && !hasNextCard) return
+        poppedCardId = currentWords.getOrNull(currentIndex + 1)?.id
+        val exitId = nextExitId++
+        exitingCards = exitingCards + ExitingFlashcard(
+            id = exitId,
+            word = word,
+            startX = startX,
+            startY = startY,
+            targetX = targetX,
+            targetY = targetY,
+            exitDurationMillis = exitDurationMillis,
+            swipedRight = swipedRight,
+            isSkip = isSkip,
+            isFlipped = isFlipped,
+            showBoth = showBothGlobal,
+            showTranslation = showTranslation
+        )
+        currentCardExiting = true
+        interactionLocked = true
+
+        if (isSkip) {
+            pendingSkipTransition = true
+        } else if (hasNextCard) {
+            pendingDragResult = swipedRight
+        } else {
+            screenScope.launch {
+                kotlinx.coroutines.delay(exitDurationMillis.toLong())
+                processResult(swipedRight)
+                currentCardExiting = false
+            }
+        }
+    }
+
+    fun startButtonSwipe(swipedRight: Boolean, isSkip: Boolean = false) {
+        if (currentCardExiting || interactionLocked) return
+        startSwipe(swipedRight, targetY = if (isSkip) 2500f else -2500f, isSkip = isSkip)
+    }
+
     LaunchedEffect(volumeDownEvents) {
         volumeDownEvents?.collect {
-            if (!isFinished && !triggerSwipeRight && !triggerSwipeLeft && !triggerSkip) {
-                triggerSwipeRight = true
-            }
+            if (!isFinished) startButtonSwipe(true)
         }
     }
 
     LaunchedEffect(volumeUpEvents) {
         volumeUpEvents?.collect {
-            if (!isFinished && !triggerSwipeRight && !triggerSwipeLeft && !triggerSkip) {
-                if (isTestMode) {
-                    triggerSwipeLeft = true
-                } else {
-                    if (currentIndex > 0) {
-                        currentIndex--
-                    }
+            if (!isFinished) {
+                if (isTestMode) startButtonSwipe(false)
+                else if (!currentCardExiting && !interactionLocked && currentIndex > 0) {
+                    currentIndex--
                 }
             }
         }
@@ -137,9 +215,8 @@ fun FlashcardScreen(
 
     LaunchedEffect(skipEvents) {
         skipEvents?.collect {
-            if (!isFinished && isTestMode && currentIndex < currentWords.size - 1 && 
-                !triggerSwipeRight && !triggerSwipeLeft && !triggerSkip) {
-                triggerSkip = true
+            if (!isFinished && isTestMode && currentIndex < currentWords.size - 1) {
+                startButtonSwipe(true, isSkip = true)
             }
         }
     }
@@ -198,6 +275,7 @@ fun FlashcardScreen(
                         isMaintenanceOrCompleted = isMaintenanceOrCompleted,
                         isBasket = isBasket,
                         onLearnAll = {
+                            clearTransitionState()
                             currentWords = words
                             currentIndex = 0
                             isTestMode = false
@@ -207,6 +285,7 @@ fun FlashcardScreen(
                             unlearnedWordsInSession = emptySet()
                         },
                         onTestAll = {
+                            clearTransitionState()
                             currentWords = words
                             currentIndex = 0
                             isTestMode = true
@@ -216,6 +295,7 @@ fun FlashcardScreen(
                             unlearnedWordsInSession = emptySet()
                         },
                         onLearnUnlearned = {
+                            clearTransitionState()
                             currentWords = unlearnedWordsInSession.toList()
                             currentIndex = 0
                             isTestMode = false
@@ -225,6 +305,7 @@ fun FlashcardScreen(
                             unlearnedWordsInSession = emptySet()
                         },
                         onTestUnlearned = {
+                            clearTransitionState()
                             currentWords = unlearnedWordsInSession.toList()
                             currentIndex = 0
                             isTestMode = true
@@ -262,40 +343,74 @@ fun FlashcardScreen(
                                     showBoth = showBothGlobal,
                                     onClick = {},
                                     onSwipe = {},
-                                    isBackground = true
+                                    isBackground = true,
+                                    triggerPop = poppedCardId == currentWords[nextIndex].id,
+                                    onPopComplete = {
+                                        when {
+                                            pendingDragResult != null -> {
+                                                val result = pendingDragResult!!
+                                                pendingDragResult = null
+                                                processResult(result)
+                                            }
+                                            pendingSkipTransition -> {
+                                                pendingSkipTransition = false
+                                                processSkip()
+                                            }
+                                        }
+                                        if (pendingDragResult == null && !pendingSkipTransition) {
+                                            currentCardExiting = false
+                                        }
+                                    }
                                 )
                             }
                         }
 
-                        key(currentWord.id) {
-                            Flashcard(
-                                key = currentIndex,
-                                word = currentWord,
-                                showTranslation = showTranslation,
-                                isTestMode = isTestMode,
-                                isFlipped = isFlipped,
-                                showBoth = showBothGlobal,
-                                onClick = { showTranslation = !showTranslation },
-                                onSwipe = { swipedRight -> pendingSwipeResult = swipedRight },
-                                onSkip = { pendingSkip = true },
-                                triggerSwipeRight = triggerSwipeRight,
-                                triggerSwipeLeft = triggerSwipeLeft,
-                                triggerSkip = triggerSkip,
-                                onAnimationComplete = {
-                                    when {
-                                        pendingSkip -> processSkip()
-                                        pendingSwipeResult != null -> processResult(pendingSwipeResult!!)
-                                        triggerSkip -> processSkip()
-                                        triggerSwipeRight -> processResult(true)
-                                        triggerSwipeLeft -> processResult(false)
+                        if (!currentCardExiting) {
+                            key(currentWord.id) {
+                                Flashcard(
+                                    key = currentIndex,
+                                    word = currentWord,
+                                    modifier = Modifier.zIndex(1f),
+                                    showTranslation = showTranslation,
+                                    isTestMode = isTestMode,
+                                    isFlipped = isFlipped,
+                                    showBoth = showBothGlobal,
+                                    onClick = { showTranslation = !showTranslation },
+                                    onSwipe = {},
+                                    isInputEnabled = !interactionLocked,
+                                    onSwipeReleased = { swipedRight, startX, startY, targetX, targetY ->
+                                        startSwipe(swipedRight, startX, startY, targetX, targetY)
+                                    },
+                                    onSkip = {}
+                                )
+                            }
+                        }
+
+                        exitingCards.forEach { exitingCard ->
+                            key(exitingCard.id) {
+                                Flashcard(
+                                    key = exitingCard.id,
+                                    word = exitingCard.word,
+                                    showTranslation = exitingCard.showTranslation,
+                                    isTestMode = isTestMode,
+                                    isFlipped = exitingCard.isFlipped,
+                                    showBoth = exitingCard.showBoth,
+                                    onClick = {},
+                                    onSwipe = {},
+                                    isInputEnabled = false,
+                                    initialOffsetX = exitingCard.startX,
+                                    initialOffsetY = exitingCard.startY,
+                                    exitTargetX = exitingCard.targetX,
+                                    exitTargetY = exitingCard.targetY,
+                                    animationDurationMillis = exitingCard.exitDurationMillis,
+                                    triggerSwipeRight = !exitingCard.isSkip && exitingCard.swipedRight,
+                                    triggerSwipeLeft = !exitingCard.isSkip && !exitingCard.swipedRight,
+                                    triggerSkip = exitingCard.isSkip,
+                                    onAnimationComplete = {
+                                        exitingCards = exitingCards.filterNot { it.id == exitingCard.id }
                                     }
-                                    triggerSwipeRight = false
-                                    triggerSwipeLeft = false
-                                    triggerSkip = false
-                                    pendingSwipeResult = null
-                                    pendingSkip = false
-                                }
-                            )
+                                )
+                            }
                         }
                     }
 
@@ -333,7 +448,7 @@ fun FlashcardScreen(
                         if (currentIndex > 0) {
                             SmallFloatingActionButton(
                                 onClick = {
-                                    if (!triggerSwipeRight && !triggerSwipeLeft && !triggerSkip) {
+                                    if (!currentCardExiting && !interactionLocked) {
                                         currentIndex--
                                     }
                                 },
@@ -353,7 +468,7 @@ fun FlashcardScreen(
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         if (isTestMode && currentWord != null) {
                             SmallFloatingActionButton(
-                                onClick = { if (!triggerSwipeRight && !triggerSwipeLeft && !triggerSkip) triggerSwipeLeft = true },
+                                onClick = { startButtonSwipe(false) },
                                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                                 shape = CircleShape
@@ -367,7 +482,7 @@ fun FlashcardScreen(
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         if (isTestMode && currentWord != null) {
                             SmallFloatingActionButton(
-                                onClick = { if (!triggerSwipeRight && !triggerSwipeLeft && !triggerSkip) triggerSwipeRight = true },
+                                onClick = { startButtonSwipe(true) },
                                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                                 shape = CircleShape
@@ -382,7 +497,7 @@ fun FlashcardScreen(
                         if (isTestMode) {
                             if (currentIndex < currentWords.size - 1) {
                                 SmallFloatingActionButton(
-                                    onClick = { if (!triggerSwipeRight && !triggerSwipeLeft && !triggerSkip) triggerSkip = true },
+                                    onClick = { startButtonSwipe(true, isSkip = true) },
                                     shape = CircleShape,
                                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer
@@ -396,9 +511,7 @@ fun FlashcardScreen(
                         } else if (currentIndex < currentWords.size) {
                             SmallFloatingActionButton(
                                 onClick = {
-                                    if (!triggerSwipeRight && !triggerSwipeLeft && !triggerSkip) {
-                                        triggerSwipeRight = true
-                                    }
+                                    startButtonSwipe(true)
                                 },
                                 shape = CircleShape,
                                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -433,16 +546,27 @@ fun Flashcard(
     triggerSwipeRight: Boolean = false,
     triggerSwipeLeft: Boolean = false,
     triggerSkip: Boolean = false,
+    triggerPop: Boolean = false,
+    onPopComplete: () -> Unit = {},
+    onSwipeReleased: (Boolean, Float, Float, Float, Float) -> Unit = { _, _, _, _, _ -> },
+    isInputEnabled: Boolean = true,
+    initialOffsetX: Float = 0f,
+    initialOffsetY: Float = 0f,
+    exitTargetX: Float? = null,
+    exitTargetY: Float? = null,
+    animationDurationMillis: Int = 500,
     onAnimationComplete: () -> Unit = {}
 ) {
-    val offsetX = remember(word, key) { Animatable(0f) }
-    val offsetY = remember(word, key) { Animatable(0f) }
-    val alpha = remember(word, key) { Animatable(if (isBackground) 0.6f else 1f) }
-    val scale = remember(word, key) { Animatable(if (isBackground) 0.92f else 1f) }
+    val offsetX = remember(word, key) { Animatable(initialOffsetX) }
+    val offsetY = remember(word, key) { Animatable(initialOffsetY) }
+    val alpha = remember(word, key) { Animatable(1f) }
+    val scale = remember(word, key) { Animatable(if (isBackground && !triggerPop) 0.92f else 1f) }
     val rotation = offsetX.value / 10f
     val scope = rememberCoroutineScope()
 
     val currentOnSwipe by rememberUpdatedState(onSwipe)
+    val currentOnSwipeReleased by rememberUpdatedState(onSwipeReleased)
+    val currentOnPopComplete by rememberUpdatedState(onPopComplete)
     val currentOnSkip by rememberUpdatedState(onSkip)
     val currentOnClick by rememberUpdatedState(onClick)
     val currentOnAnimationComplete by rememberUpdatedState(onAnimationComplete)
@@ -450,6 +574,7 @@ fun Flashcard(
     val surfaceColor = MaterialTheme.colorScheme.surfaceVariant
     val swipeRightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f).compositeOver(surfaceColor)
     val swipeLeftColor = MaterialTheme.colorScheme.error.copy(alpha = 0.15f).compositeOver(surfaceColor)
+    val cardShape = MaterialTheme.shapes.medium
 
     val frontText = if (isFlipped) word.translation else word.original
     val backText = if (isFlipped) word.original else word.translation
@@ -476,13 +601,13 @@ fun Flashcard(
         }
     }
 
-    LaunchedEffect(isBackground) {
-        if (!isBackground) {
-            launch { scale.animateTo(1f, animationSpec = spring(dampingRatio = 0.7f, stiffness = 3000f)) }
-            launch { alpha.animateTo(1f, animationSpec = tween(150)) }
-        } else {
+    LaunchedEffect(isBackground, triggerPop) {
+        if (isBackground && triggerPop) {
+            scale.animateTo(1f, animationSpec = tween(250, easing = FastOutSlowInEasing))
+            currentOnPopComplete()
+        } else if (isBackground) {
             launch { scale.snapTo(0.92f) }
-            launch { alpha.snapTo(0.6f) }
+            launch { alpha.snapTo(1f) }
         }
     }
 
@@ -495,9 +620,9 @@ fun Flashcard(
             // triggerSwipeRight (Know/Vol Down) flies to the top right corner.
             // triggerSwipeLeft (Don't Know/Vol Up) flies to the top left corner.
             // triggerSkip (Skip Button) flies to the bottom right corner.
-            val targetX = if (isRight) 2500f else -2500f
-            val targetY = if (isActualSkip) 2500f else -2500f
-            val animDuration = 500
+            val targetX = exitTargetX ?: if (isRight) 2500f else -2500f
+            val targetY = exitTargetY ?: if (isActualSkip) 2500f else -2500f
+            val animDuration = animationDurationMillis
 
             launch { offsetX.animateTo(targetX, animationSpec = tween(animDuration, easing = FastOutSlowInEasing)) }
             launch { offsetY.animateTo(targetY, animationSpec = tween(animDuration, easing = FastOutSlowInEasing)) }
@@ -516,6 +641,7 @@ fun Flashcard(
     }
 
     Card(
+        shape = cardShape,
         modifier = modifier
             .fillMaxWidth()
             .height(400.dp)
@@ -525,46 +651,47 @@ fun Flashcard(
                 rotationZ = rotation,
                 scaleX = scale.value,
                 scaleY = scale.value,
-                alpha = alpha.value
+                alpha = alpha.value,
+                shape = cardShape,
+                clip = true
             )
-            .pointerInput(word, key) {
-                if (isBackground) return@pointerInput
-                detectTapGestures(onTap = { currentOnClick() })
-            }
-            .pointerInput(word, key) {
-                if (isBackground) return@pointerInput
-                detectDragGestures(
-                    onDragEnd = {
-                        scope.launch {
-                            val totalDrag = sqrt((offsetX.value * offsetX.value + offsetY.value * offsetY.value).toDouble()).toFloat()
-                            if (totalDrag > 400f) {
-                                val angle = atan2(offsetY.value.toDouble(), offsetX.value.toDouble())
-                                val targetX = (cos(angle) * 1500).toFloat()
-                                val targetY = (sin(angle) * 1500).toFloat()
-                                val swipeRight = offsetX.value > 0
-                                val animDuration = 400
-                                launch { offsetX.animateTo(targetX, animationSpec = tween(animDuration)) }
-                                launch { offsetY.animateTo(targetY, animationSpec = tween(animDuration)) }
-                                launch { alpha.animateTo(0f, animationSpec = tween(animDuration)) }
-                                kotlinx.coroutines.delay(animDuration.toLong())
-                                currentOnSwipe(swipeRight)
-                                currentOnAnimationComplete()
-                            } else {
-                                launch { offsetX.animateTo(0f) }
-                                launch { offsetY.animateTo(0f) }
-                            }
+            .then(
+                if (isBackground || !isInputEnabled) {
+                    Modifier
+                } else {
+                    Modifier
+                        .pointerInput(word, key) {
+                            detectTapGestures(onTap = { currentOnClick() })
                         }
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        scope.launch {
-                            offsetX.snapTo(offsetX.value + dragAmount.x)
-                            offsetY.snapTo(offsetY.value + dragAmount.y)
+                        .pointerInput(word, key) {
+                            detectDragGestures(
+                                onDragEnd = {
+                                    scope.launch {
+                                        val totalDrag = sqrt((offsetX.value * offsetX.value + offsetY.value * offsetY.value).toDouble()).toFloat()
+                                        if (totalDrag > 400f) {
+                                            val angle = atan2(offsetY.value.toDouble(), offsetX.value.toDouble())
+                                            val targetX = (cos(angle) * 1500).toFloat()
+                                            val targetY = (sin(angle) * 1500).toFloat()
+                                            val swipeRight = offsetX.value > 0
+                                            currentOnSwipeReleased(swipeRight, offsetX.value, offsetY.value, targetX, targetY)
+                                        } else {
+                                            launch { offsetX.animateTo(0f) }
+                                            launch { offsetY.animateTo(0f) }
+                                        }
+                                    }
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    scope.launch {
+                                        offsetX.snapTo(offsetX.value + dragAmount.x)
+                                        offsetY.snapTo(offsetY.value + dragAmount.y)
+                                    }
+                                }
+                            )
                         }
-                    }
-                )
-            },
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isBackground) 2.dp else 8.dp),
+                }
+            ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {
                 !isBackground && isTestMode && offsetX.value > 100f -> swipeRightColor

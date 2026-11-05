@@ -582,7 +582,9 @@ fun Flashcard(
                             else if (triggerSkip && isTestMode) 1f
                             else (1f - currentProgress.value * 3f).coerceIn(0f, 1f)
 
-            val backAlpha = if (isBackground) 0f
+            val backAlpha = if (isBackground) {
+                if (showBoth) 1f else 0f
+            }
                            else if (isRevealed) translationAlphaAnimated
                            else if (triggerSkip && isTestMode) 0f
                            else (currentProgress.value * 3f - 0.5f).coerceIn(0f, 1f)

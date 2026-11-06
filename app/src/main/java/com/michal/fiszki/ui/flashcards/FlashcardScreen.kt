@@ -29,6 +29,7 @@ import com.michal.fiszki.model.LearningStatus
 import com.michal.fiszki.model.Theme
 import com.michal.fiszki.model.ThemeStatus
 import com.michal.fiszki.model.Word
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -98,6 +99,14 @@ fun FlashcardScreen(
         exitingCards = emptyList()
         pendingDragResult = null
         pendingSkipTransition = false
+    }
+
+    fun goToPreviousCard() {
+        if (currentIndex > 0 && !currentCardExiting && !interactionLocked) {
+            clearTransitionState()
+            showTranslation = false
+            currentIndex--
+        }
     }
     
     val isMaintenanceOrCompleted = remember(theme.status) { 
@@ -200,7 +209,12 @@ fun FlashcardScreen(
 
     fun startButtonSwipe(swipedRight: Boolean, isSkip: Boolean = false) {
         if (currentCardExiting || interactionLocked) return
-        startSwipe(swipedRight, targetY = if (isSkip) 2500f else -2500f, isSkip = isSkip)
+        startSwipe(
+            swipedRight,
+            targetY = if (isSkip) 2500f else -2500f,
+            isSkip = isSkip,
+            exitDurationMillis = 1000
+        )
     }
 
     LaunchedEffect(volumeDownEvents) {
@@ -213,9 +227,7 @@ fun FlashcardScreen(
         volumeUpEvents?.collect {
             if (!isFinished) {
                 if (isTestMode) startButtonSwipe(false)
-                else if (!currentCardExiting && !interactionLocked && currentIndex > 0) {
-                    currentIndex--
-                }
+                else goToPreviousCard()
             }
         }
     }
@@ -403,6 +415,7 @@ fun FlashcardScreen(
                                 Flashcard(
                                     key = exitingCard.id,
                                     word = exitingCard.word,
+                                    modifier = Modifier.zIndex(2f),
                                     showTranslation = exitingCard.showTranslation,
                                     isTestMode = isTestMode,
                                     isFlipped = exitingCard.isFlipped,
@@ -459,11 +472,7 @@ fun FlashcardScreen(
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         if (currentIndex > 0) {
                             SmallFloatingActionButton(
-                                onClick = {
-                                    if (!currentCardExiting && !interactionLocked) {
-                                        currentIndex--
-                                    }
-                                },
+                                onClick = { goToPreviousCard() },
                                 shape = CircleShape,
                                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer
@@ -571,7 +580,7 @@ fun Flashcard(
 ) {
     val offsetX = remember(word, key) { Animatable(initialOffsetX) }
     val offsetY = remember(word, key) { Animatable(initialOffsetY) }
-    val alpha = remember(word, key) { Animatable(1f) }
+    val alpha = remember(word, key) { Animatable(if (isBackground && !triggerPop) 0.58f else 1f) }
     val scale = remember(word, key) { Animatable(if (isBackground && !triggerPop) 0.92f else 1f) }
     val rotation = offsetX.value / 10f
     val scope = rememberCoroutineScope()
@@ -615,10 +624,16 @@ fun Flashcard(
 
     LaunchedEffect(isBackground, triggerPop) {
         if (isBackground && triggerPop) {
-            scale.animateTo(1f, animationSpec = tween(250, easing = FastOutSlowInEasing))
+            coroutineScope {
+                launch { scale.animateTo(1f, animationSpec = tween(350, easing = FastOutSlowInEasing)) }
+                launch { alpha.animateTo(1f, animationSpec = tween(350, easing = FastOutSlowInEasing)) }
+            }
             currentOnPopComplete()
         } else if (isBackground) {
             launch { scale.snapTo(0.92f) }
+            launch { alpha.snapTo(0.58f) }
+        } else {
+            launch { scale.snapTo(1f) }
             launch { alpha.snapTo(1f) }
         }
     }

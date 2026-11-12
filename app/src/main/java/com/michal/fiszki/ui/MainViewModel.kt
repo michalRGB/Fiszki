@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -69,6 +70,9 @@ class MainViewModel(
 
     private val _flashcardWords = MutableStateFlow<List<Word>?>(null)
     val flashcardWords: StateFlow<List<Word>?> = _flashcardWords.asStateFlow()
+
+    private val _pendingBackup = MutableStateFlow<String?>(null)
+    val pendingBackup: StateFlow<String?> = _pendingBackup.asStateFlow()
 
     val learningDate: StateFlow<LocalDate> = flow {
         while (true) {
@@ -476,6 +480,19 @@ class MainViewModel(
             )
         }
         json.encodeToString(archive)
+    }
+
+    fun prepareBackupRestore(jsonString: String) {
+        _pendingBackup.value = jsonString
+    }
+
+    fun dismissBackupRestore() {
+        _pendingBackup.value = null
+    }
+
+    fun confirmBackupRestore() {
+        val backupJson = _pendingBackup.getAndUpdate { null } ?: return
+        restoreBackup(backupJson)
     }
 
     fun restoreBackup(jsonString: String) {

@@ -90,6 +90,7 @@ fun MainScreen(viewModel: MainViewModel, onVolumeControlsChanged: (Boolean) -> U
     val basketWords by viewModel.basketWords.collectAsState()
     val flashcardWords by viewModel.flashcardWords.collectAsState()
     val learningDate by viewModel.learningDate.collectAsState()
+    val pendingBackup by viewModel.pendingBackup.collectAsState()
 
     var selectedCategoryId by rememberSaveable { mutableStateOf<Int?>(null) }
     var selectedSubThemePartIndex by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -116,8 +117,6 @@ fun MainScreen(viewModel: MainViewModel, onVolumeControlsChanged: (Boolean) -> U
             }
         }
     }
-
-    var pendingBackup by remember { mutableStateOf<String?>(null) }
 
     val backupExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -148,7 +147,7 @@ fun MainScreen(viewModel: MainViewModel, onVolumeControlsChanged: (Boolean) -> U
                 if (inputStream == null) {
                     Toast.makeText(context, "Could not open selected backup", Toast.LENGTH_LONG).show()
                 } else {
-                    pendingBackup = inputStream.bufferedReader().use { it.readText() }
+                    viewModel.prepareBackupRestore(inputStream.bufferedReader().use { it.readText() })
                 }
             } catch (e: Exception) {
                 Toast.makeText(context, "Could not read backup: ${e.message}", Toast.LENGTH_LONG).show()
@@ -162,21 +161,18 @@ fun MainScreen(viewModel: MainViewModel, onVolumeControlsChanged: (Boolean) -> U
         }
     }
 
-    pendingBackup?.let { backupJson ->
+    if (pendingBackup != null) {
         AlertDialog(
-            onDismissRequest = { pendingBackup = null },
+            onDismissRequest = viewModel::dismissBackupRestore,
             title = { Text("Restore full backup?") },
             text = { Text("This will replace all local data on this device with the contents of the backup.") },
             confirmButton = {
-                TextButton(onClick = {
-                    pendingBackup = null
-                    viewModel.restoreBackup(backupJson)
-                }) {
+                TextButton(onClick = viewModel::confirmBackupRestore) {
                     Text("Restore")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingBackup = null }) {
+                TextButton(onClick = viewModel::dismissBackupRestore) {
                     Text("Cancel")
                 }
             }

@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,7 +34,7 @@ fun WordListScreen(
     onRemoveFromBasket: (Word) -> Unit = {},
     onClearBasket: () -> Unit = {}
 ) {
-    var showMenu by remember { mutableStateOf(false) }
+    var showMenu by rememberSaveable { mutableStateOf(false) }
     
     val unlearnedWords = if (isBasket) {
         words.filter { it.basketStatus != LearningStatus.LEARNED }

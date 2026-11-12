@@ -14,6 +14,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -36,8 +38,12 @@ fun ThemeListScreen(
     state: LazyListState = rememberLazyListState(),
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    var themeToOverride by remember { mutableStateOf<Theme?>(null) }
-    var showInfoDialog by remember { mutableStateOf(false) }
+    val overrideThemeSaver = listSaver<Theme?, Int>(
+        save = { theme -> if (theme == null) emptyList() else listOf(theme.id, theme.categoryId) },
+        restore = { key -> themes.find { it.id == key.getOrNull(0) && it.categoryId == key.getOrNull(1) } }
+    )
+    var themeToOverride by rememberSaveable(stateSaver = overrideThemeSaver) { mutableStateOf<Theme?>(null) }
+    var showInfoDialog by rememberSaveable { mutableStateOf(false) }
 
     val totalWordCount = remember(themes) { 
         themes.filterNot { it.name.contains("Basket List", ignoreCase = true) }.sumOf { it.wordCount }
@@ -245,7 +251,7 @@ fun OverrideDialog(
         else CycleConfig.getNextStage(theme.status).first.displayName
     }
 
-    var selectedStage by remember { mutableStateOf(currentTarget) }
+    var selectedStage by rememberSaveable(theme.id, theme.categoryId) { mutableStateOf(currentTarget) }
 
     AlertDialog(
         onDismissRequest = onDismiss,

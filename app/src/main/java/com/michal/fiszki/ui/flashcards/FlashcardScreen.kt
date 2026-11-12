@@ -15,6 +15,8 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -25,6 +27,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.michal.fiszki.model.LearningStatus
 import com.michal.fiszki.model.CycleConfig
 import com.michal.fiszki.model.Theme
@@ -66,17 +71,41 @@ fun FlashcardScreen(
     onSessionFinished: (List<Word>, Boolean) -> Unit,
     volumeDownEvents: kotlinx.coroutines.flow.SharedFlow<Unit>? = null,
     volumeUpEvents: kotlinx.coroutines.flow.SharedFlow<Unit>? = null,
-    skipEvents: kotlinx.coroutines.flow.SharedFlow<Unit>? = null
+    skipEvents: kotlinx.coroutines.flow.SharedFlow<Unit>? = null,
+    onVolumeControlsChanged: (Boolean) -> Unit = {}
 ) {
-    var currentWords by remember { mutableStateOf(words) }
-    var currentIndex by remember { mutableIntStateOf(0) }
-    var isTestMode by remember { mutableStateOf(isTestModeInitially) }
-    var unlearnedWordsInSession by remember { mutableStateOf(setOf<Word>()) }
-    var isUnlearnedSession by remember { mutableStateOf(isUnlearnedSessionInitially) }
-    var showTranslation by remember { mutableStateOf(false) }
-    var isFinished by remember { mutableStateOf(false) }
-    var isFlipped by remember(isTestMode) { mutableStateOf(isTestMode) }
-    var showBothGlobal by remember(isTestMode) { mutableStateOf(false) }
+    val wordsById = remember(words, allWords) { (words + allWords).associateBy { it.id } }
+    val wordListSaver = listSaver<List<Word>, Int>(
+        save = { list -> list.map { it.id } },
+        restore = { ids -> ids.mapNotNull { wordsById[it] } }
+    )
+    val missedWordsSaver = listSaver<Set<Word>, Int>(
+        save = { missed -> missed.map { it.id } },
+        restore = { ids -> ids.mapNotNull { wordsById[it] }.toSet() }
+    )
+    var currentWords by rememberSaveable(stateSaver = wordListSaver) { mutableStateOf(words) }
+    var currentIndex by rememberSaveable { mutableIntStateOf(0) }
+    var isTestMode by rememberSaveable { mutableStateOf(isTestModeInitially) }
+    var unlearnedWordsInSession by rememberSaveable(stateSaver = missedWordsSaver) { mutableStateOf(setOf<Word>()) }
+    var isUnlearnedSession by rememberSaveable { mutableStateOf(isUnlearnedSessionInitially) }
+    var showTranslation by rememberSaveable { mutableStateOf(false) }
+    var isFinished by rememberSaveable { mutableStateOf(false) }
+    var isFlipped by rememberSaveable(isTestMode) { mutableStateOf(isTestMode) }
+    var showBothGlobal by rememberSaveable(isTestMode) { mutableStateOf(false) }
+
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val updateVolumeControls by rememberUpdatedState(onVolumeControlsChanged)
+    val hasActiveCard = !isFinished && currentWords.isNotEmpty()
+    DisposableEffect(lifecycle, hasActiveCard) {
+        fun update() = updateVolumeControls(hasActiveCard && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+        val observer = LifecycleEventObserver { _, _ -> update() }
+        lifecycle.addObserver(observer)
+        update()
+        onDispose {
+            lifecycle.removeObserver(observer)
+            updateVolumeControls(false)
+        }
+    }
 
     // Animation trigger states
     var poppedCardId by remember { mutableStateOf<Int?>(null) }
@@ -84,8 +113,8 @@ fun FlashcardScreen(
     var interactionLocked by remember { mutableStateOf(false) }
     var exitingCards by remember { mutableStateOf(emptyList<ExitingFlashcard>()) }
     var nextExitId by remember { mutableIntStateOf(0) }
-    var pendingDragResult by remember { mutableStateOf<Boolean?>(null) }
-    var pendingSkipTransition by remember { mutableStateOf(false) }
+    var pendingDragResult by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    var pendingSkipTransition by rememberSaveable { mutableStateOf(false) }
     val screenScope = rememberCoroutineScope()
 
     val currentWord = if (currentIndex < currentWords.size) currentWords[currentIndex] else null
@@ -112,22 +141,6 @@ fun FlashcardScreen(
     
     val isMaintenanceOrCompleted = remember(theme.status) { 
         theme.status.ordinal >= ThemeStatus.LEARNING_STAGE_4.ordinal
-    }
-
-    // Centralized reset for triggers and state when card changes
-    LaunchedEffect(currentIndex, currentWords, isFinished) {
-        if (isFinished) {
-            clearTransitionState()
-            return@LaunchedEffect
-        }
-        // We now reset showTranslation in processResult/processSkip for better atomicity
-        currentCardExiting = false
-        pendingDragResult = null
-        pendingSkipTransition = false
-        if (interactionLocked) {
-            withFrameNanos { }
-            interactionLocked = false
-        }
     }
 
     val processResult = { known: Boolean ->
@@ -159,6 +172,30 @@ fun FlashcardScreen(
             updatedList.removeAt(currentIndex)
             updatedList.add(wordToSkip)
             currentWords = updatedList
+        }
+    }
+
+    LaunchedEffect(currentIndex, currentWords, isFinished) {
+        if (isFinished) {
+            clearTransitionState()
+            return@LaunchedEffect
+        }
+        // A recreation can interrupt an animation after its answer was accepted.
+        // Apply the saved action once, then start the restored card without animation.
+        if (!currentCardExiting && (pendingDragResult != null || pendingSkipTransition)) {
+            val result = pendingDragResult
+            val skip = pendingSkipTransition
+            clearTransitionState()
+            if (result != null) processResult(result)
+            else if (skip) processSkip()
+            return@LaunchedEffect
+        }
+        currentCardExiting = false
+        pendingDragResult = null
+        pendingSkipTransition = false
+        if (interactionLocked) {
+            withFrameNanos { }
+            interactionLocked = false
         }
     }
 
@@ -197,13 +234,16 @@ fun FlashcardScreen(
 
         if (isSkip) {
             pendingSkipTransition = true
-        } else if (hasNextCard) {
-            pendingDragResult = swipedRight
         } else {
-            screenScope.launch {
-                kotlinx.coroutines.delay(exitDurationMillis.toLong())
-                processResult(swipedRight)
-                currentCardExiting = false
+            pendingDragResult = swipedRight
+            if (!hasNextCard) {
+                screenScope.launch {
+                    kotlinx.coroutines.delay(exitDurationMillis.toLong())
+                    val result = pendingDragResult
+                    pendingDragResult = null
+                    if (result != null) processResult(result)
+                    currentCardExiting = false
+                }
             }
         }
     }
@@ -785,7 +825,7 @@ fun FinishedScreen(
     onForceAdvance: () -> Unit,
     onBack: () -> Unit
 ) {
-    var showForceAdvanceDialog by remember { mutableStateOf(false) }
+    var showForceAdvanceDialog by rememberSaveable { mutableStateOf(false) }
     val completesBasket = isBasket && CycleConfig.isFinalBasketStage(theme.status)
 
     Column(

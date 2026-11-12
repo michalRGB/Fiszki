@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -40,6 +41,7 @@ import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
     private lateinit var viewModel: MainViewModel
+    private var flashcardVolumeControlsEnabled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,14 +57,13 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             FiszkiTheme {
-                MainScreen(viewModel)
+                MainScreen(viewModel, onVolumeControlsChanged = { flashcardVolumeControlsEnabled = it })
             }
         }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        val isFlashcardActive = viewModel.flashcardWords.value != null
-        if (!isFlashcardActive) return super.onKeyDown(keyCode, event)
+        if (!flashcardVolumeControlsEnabled) return super.onKeyDown(keyCode, event)
 
         return when (keyCode) {
             KeyEvent.KEYCODE_VOLUME_DOWN -> {
@@ -79,7 +80,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MainScreen(viewModel: MainViewModel) {
+fun MainScreen(viewModel: MainViewModel, onVolumeControlsChanged: (Boolean) -> Unit = {}) {
     val languages by viewModel.languages.collectAsState()
     val selectedLanguage by viewModel.selectedLanguage.collectAsState()
     val themes by viewModel.themes.collectAsState()
@@ -90,12 +91,12 @@ fun MainScreen(viewModel: MainViewModel) {
     val flashcardWords by viewModel.flashcardWords.collectAsState()
     val learningDate by viewModel.learningDate.collectAsState()
 
-    var selectedCategoryId by remember { mutableStateOf<Int?>(null) }
-    var selectedSubThemePartIndex by remember { mutableStateOf<Int?>(null) }
-    var isTestMode by remember { mutableStateOf(false) }
-    var isUnlearnedSession by remember { mutableStateOf(false) }
-    var showStats by remember { mutableStateOf(false) }
-    var isBasketMode by remember { mutableStateOf(false) }
+    var selectedCategoryId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var selectedSubThemePartIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+    var isTestMode by rememberSaveable { mutableStateOf(false) }
+    var isUnlearnedSession by rememberSaveable { mutableStateOf(false) }
+    var showStats by rememberSaveable { mutableStateOf(false) }
+    var isBasketMode by rememberSaveable { mutableStateOf(false) }
 
     val mainThemeListState = rememberLazyListState()
     val subThemeListState = rememberLazyListState()
@@ -186,6 +187,10 @@ fun MainScreen(viewModel: MainViewModel) {
         viewModel.selectLanguage(language)
         selectedCategoryId = null
         selectedSubThemePartIndex = null
+        isBasketMode = false
+        isTestMode = false
+        isUnlearnedSession = false
+        showStats = false
         viewModel.setFlashcardWords(null)
     }
 
@@ -494,7 +499,8 @@ fun MainScreen(viewModel: MainViewModel) {
                     },
                     volumeDownEvents = viewModel.volumeDownEvents,
                     volumeUpEvents = viewModel.volumeUpEvents,
-                    skipEvents = viewModel.skipEvents
+                    skipEvents = viewModel.skipEvents,
+                    onVolumeControlsChanged = onVolumeControlsChanged
                 )
             } else {
                 SideEffect { navigateBack() }

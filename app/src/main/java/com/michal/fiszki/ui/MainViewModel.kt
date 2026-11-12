@@ -16,6 +16,7 @@ import com.michal.fiszki.model.*
 import com.michal.fiszki.getBatches
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -68,7 +70,14 @@ class MainViewModel(
     private val _flashcardWords = MutableStateFlow<List<Word>?>(null)
     val flashcardWords: StateFlow<List<Word>?> = _flashcardWords.asStateFlow()
 
-    val calculatedCategories: StateFlow<List<Theme>> = combine(_themes, _words, _progress) { themes, wordsMap, progressMap ->
+    val learningDate: StateFlow<LocalDate> = flow {
+        while (true) {
+            emit(CycleConfig.learningDate())
+            delay(1_000)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CycleConfig.learningDate())
+
+    val calculatedCategories: StateFlow<List<Theme>> = combine(_themes, _words, _progress, learningDate) { themes, wordsMap, progressMap, today ->
         val topLevelThemes = themes.filter { it.parentId == null }
         topLevelThemes.map { theme ->
             val subThemesForThis = themes.filter { it.parentId == theme.id }
@@ -104,7 +113,7 @@ class MainViewModel(
             } else {
                 val anyInProgress = allParts.any { it.isInProgress }
                 val anyPartReady = allParts.any { part ->
-                    val isPartLocked = part.nextAvailableDate?.isAvailableNow() == false && !part.isInProgress
+                    val isPartLocked = part.nextAvailableDate?.isAfter(today) == true && !part.isInProgress
                     !isPartLocked && part.status != ThemeStatus.NOT_STARTED
                 }
                 val anyPartNotStarted = allParts.any { it.status == ThemeStatus.NOT_STARTED }
@@ -112,7 +121,7 @@ class MainViewModel(
                 val activeParts = allParts.filter { it.status != ThemeStatus.NOT_STARTED && it.status != ThemeStatus.COMPLETED }
                 val calculatedStatus = when {
                     anyInProgress -> allParts.filter { it.isInProgress }.minBy { it.status.ordinal }.status
-                    anyPartReady -> allParts.filter { ! (it.nextAvailableDate?.isAvailableNow() == false && !it.isInProgress) && it.status != ThemeStatus.NOT_STARTED }.minBy { it.status.ordinal }.status
+                    anyPartReady -> allParts.filter { ! (it.nextAvailableDate?.isAfter(today) == true && !it.isInProgress) && it.status != ThemeStatus.NOT_STARTED }.minBy { it.status.ordinal }.status
                     anyPartNotStarted -> ThemeStatus.NOT_STARTED
                     activeParts.isEmpty() -> ThemeStatus.COMPLETED
                     else -> activeParts.minBy { it.status.ordinal }.status

@@ -12,15 +12,12 @@ import androidx.compose.ui.unit.dp
 import com.michal.fiszki.model.CycleConfig
 import com.michal.fiszki.model.Theme
 import com.michal.fiszki.model.ThemeStatus
-import com.michal.fiszki.model.isAvailableNow
-import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ThemeItem(theme: Theme, onClick: () -> Unit, onLongClick: () -> Unit = {}) {
+fun ThemeItem(theme: Theme, isLocked: Boolean, onClick: () -> Unit, onLongClick: () -> Unit = {}) {
     val isBasket = theme.id < 0
-    val isLocked = theme.nextAvailableDate?.isAvailableNow() == false && !theme.isInProgress
     val isReadyForReview = !isLocked && theme.status != ThemeStatus.NOT_STARTED && theme.status != ThemeStatus.COMPLETED
     val nextStatus = CycleConfig.getNextStage(theme.status).first
     

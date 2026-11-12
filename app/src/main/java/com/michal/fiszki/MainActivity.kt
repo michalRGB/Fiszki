@@ -88,6 +88,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val isLoading by viewModel.isLoading.collectAsState()
     val basketWords by viewModel.basketWords.collectAsState()
     val flashcardWords by viewModel.flashcardWords.collectAsState()
+    val learningDate by viewModel.learningDate.collectAsState()
 
     var selectedCategoryId by remember { mutableStateOf<Int?>(null) }
     var selectedSubThemePartIndex by remember { mutableStateOf<Int?>(null) }
@@ -324,6 +325,7 @@ fun MainScreen(viewModel: MainViewModel) {
             ThemeListScreen(
                 selectedLanguage = currentLang,
                 themes = categories + basketThemes,
+                learningDate = learningDate,
                 state = mainThemeListState,
                 onThemeSelected = { theme -> 
                     val basketIdx = basketThemes.indexOf(theme)
@@ -388,6 +390,7 @@ fun MainScreen(viewModel: MainViewModel) {
             ThemeListScreen(
                 selectedLanguage = currentLang,
                 themes = currentSubThemes,
+                learningDate = learningDate,
                 state = subThemeListState,
                 onThemeSelected = { subTheme ->
                     selectedSubThemePartIndex = currentSubThemes.indexOf(subTheme)
@@ -444,7 +447,7 @@ fun MainScreen(viewModel: MainViewModel) {
                                         subTheme.copy(
                                             status = nextStatus,
                                             lastCompletedDate = LocalDate.now(),
-                                            nextAvailableDate = LocalDate.now().plus(interval),
+                                            nextAvailableDate = CycleConfig.nextReviewDate(interval),
                                             isInProgress = false
                                         ),
                                         wordsToReset = allFlashcardWords
@@ -468,7 +471,7 @@ fun MainScreen(viewModel: MainViewModel) {
                                     subTheme.copy(
                                         status = nextStatus,
                                         lastCompletedDate = LocalDate.now(),
-                                        nextAvailableDate = LocalDate.now().plus(interval),
+                                        nextAvailableDate = CycleConfig.nextReviewDate(interval),
                                         isInProgress = false
                                     ),
                                     wordsToReset = partWords,
@@ -544,7 +547,7 @@ fun MainScreen(viewModel: MainViewModel) {
                                 subTheme.copy(
                                     status = nextStatus,
                                     lastCompletedDate = LocalDate.now(),
-                                    nextAvailableDate = LocalDate.now().plus(interval),
+                                    nextAvailableDate = CycleConfig.nextReviewDate(interval),
                                     isInProgress = false
                                 ),
                                 wordsToReset = themeWords,
@@ -570,7 +573,7 @@ fun MainScreen(viewModel: MainViewModel) {
                                 subTheme.copy(
                                     status = nextStatus,
                                     lastCompletedDate = LocalDate.now(),
-                                    nextAvailableDate = LocalDate.now().plus(interval),
+                                    nextAvailableDate = CycleConfig.nextReviewDate(interval),
                                     isInProgress = false
                                 ),
                                 wordsToReset = themeWords

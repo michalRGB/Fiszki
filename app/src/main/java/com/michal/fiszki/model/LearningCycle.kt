@@ -6,6 +6,14 @@ import java.time.LocalTime
 import java.time.Period
 
 object CycleConfig {
+    private val dayStart = LocalTime.of(5, 30)
+
+    fun learningDate(now: LocalDateTime = LocalDateTime.now()): LocalDate =
+        if (now.toLocalTime().isBefore(dayStart)) now.toLocalDate().minusDays(1) else now.toLocalDate()
+
+    fun nextReviewDate(interval: Period, now: LocalDateTime = LocalDateTime.now()): LocalDate =
+        learningDate(now).plus(interval)
+
     fun isFinalBasketStage(status: ThemeStatus): Boolean =
         status.ordinal >= ThemeStatus.LEARNING_STAGE_3.ordinal
 
@@ -29,8 +37,5 @@ object CycleConfig {
     }
 }
 
-fun LocalDate.isAvailableNow(): Boolean {
-    val now = LocalDateTime.now()
-    val unlockTime = this.atTime(LocalTime.of(5, 30))
-    return !now.isBefore(unlockTime)
-}
+fun LocalDate.isAvailableNow(now: LocalDateTime = LocalDateTime.now()): Boolean =
+    !isAfter(CycleConfig.learningDate(now))

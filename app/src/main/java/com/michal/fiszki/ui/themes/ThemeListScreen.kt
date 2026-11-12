@@ -22,7 +22,6 @@ import com.michal.fiszki.model.CycleConfig
 import com.michal.fiszki.model.Language
 import com.michal.fiszki.model.Theme
 import com.michal.fiszki.model.ThemeStatus
-import com.michal.fiszki.model.isAvailableNow
 import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -30,6 +29,7 @@ import java.time.LocalDate
 fun ThemeListScreen(
     selectedLanguage: Language,
     themes: List<Theme>,
+    learningDate: LocalDate,
     onThemeSelected: (Theme) -> Unit,
     onThemeOverride: (Theme, ThemeStatus, LocalDate?) -> Unit,
     onBack: () -> Unit,
@@ -43,9 +43,9 @@ fun ThemeListScreen(
         themes.filterNot { it.name.contains("Basket List", ignoreCase = true) }.sumOf { it.wordCount }
     }
 
-    val groupedThemes = remember(themes) {
+    val groupedThemes = remember(themes, learningDate) {
         themes.groupBy { theme ->
-            val isLocked = theme.nextAvailableDate?.isAvailableNow() == false && !theme.isInProgress
+            val isLocked = theme.nextAvailableDate?.isAfter(learningDate) == true && !theme.isInProgress
             val isBasket = theme.name.contains("Basket List", ignoreCase = true)
             
             when {
@@ -120,9 +120,10 @@ fun ThemeListScreen(
                             }
                         }
                         items(themesInGroup, key = { "${it.id}_${it.categoryId}_${it.name}" }) { theme ->
-                            val isLocked = theme.nextAvailableDate?.isAvailableNow() == false && !theme.isInProgress
+                            val isLocked = theme.nextAvailableDate?.isAfter(learningDate) == true && !theme.isInProgress
                             ThemeItem(
                                 theme = theme,
+                                isLocked = isLocked,
                                 onClick = { if (!isLocked) onThemeSelected(theme) },
                                 onLongClick = { 
                                     if (!isLocked) {

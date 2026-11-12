@@ -58,7 +58,7 @@ Each theme or batch has its own learning stage and next-available date. After a 
 | Maintenance 3 | Completed | 3 months |
 | Completed | Completed | 3 months |
 
-The interval is counted from the day the session is completed. A review due on a given day becomes available at 05:30 local time.
+The learning day starts at 05:30 local time. Sessions completed before 05:30 count toward the previous learning day, and review intervals are counted from that learning day. For example, completing stage 1 at 01:00 unlocks stage 2 at 05:30 that same morning; completing it at or after 05:30 unlocks stage 2 at 05:30 the next day. Review lists refresh automatically when the learning day changes.
 
 The regular schedule belongs to each theme batch. In Learning 1–4, a failed test does not advance the stage; the learner can study and retry the missed words. The learner can also choose “Proceed anyway.” Maintenance 4 is the transition point: from this stage onward, a review can advance even when some words are missed, and those words are added to the basket.
 

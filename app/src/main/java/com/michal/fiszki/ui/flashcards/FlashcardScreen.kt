@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -109,13 +110,8 @@ fun FlashcardScreen(
 
     // Animation trigger states
     var poppedCardId by remember { mutableStateOf<Int?>(null) }
-    var currentCardExiting by remember { mutableStateOf(false) }
-    var interactionLocked by remember { mutableStateOf(false) }
     var exitingCards by remember { mutableStateOf(emptyList<ExitingFlashcard>()) }
     var nextExitId by remember { mutableIntStateOf(0) }
-    var pendingDragResult by rememberSaveable { mutableStateOf<Boolean?>(null) }
-    var pendingSkipTransition by rememberSaveable { mutableStateOf(false) }
-    val screenScope = rememberCoroutineScope()
 
     val currentWord = if (currentIndex < currentWords.size) currentWords[currentIndex] else null
     val unlearnedWords = allWords.filter { word ->
@@ -124,15 +120,11 @@ fun FlashcardScreen(
 
     fun clearTransitionState() {
         poppedCardId = null
-        currentCardExiting = false
-        interactionLocked = false
         exitingCards = emptyList()
-        pendingDragResult = null
-        pendingSkipTransition = false
     }
 
     fun goToPreviousCard() {
-        if (currentIndex > 0 && !currentCardExiting && !interactionLocked) {
+        if (currentIndex > 0 && !isFinished) {
             clearTransitionState()
             showTranslation = false
             currentIndex--
@@ -143,19 +135,9 @@ fun FlashcardScreen(
         theme.status.ordinal >= ThemeStatus.LEARNING_STAGE_4.ordinal
     }
 
-    val processResult = { known: Boolean ->
-        val word = currentWords.getOrNull(currentIndex)
-        if (word != null && !isFinished) {
+    val advanceToNextCard = {
+        if (currentWords.getOrNull(currentIndex) != null && !isFinished) {
             showTranslation = false // Reset here atomically
-            if (isTestMode) {
-                onWordLearned(word, known)
-                if (!known) {
-                    unlearnedWordsInSession = unlearnedWordsInSession + word
-                } else {
-                    unlearnedWordsInSession = unlearnedWordsInSession - word
-                }
-            }
-            
             if (currentIndex < currentWords.size - 1) {
                 currentIndex++
             } else {
@@ -175,28 +157,10 @@ fun FlashcardScreen(
         }
     }
 
-    LaunchedEffect(currentIndex, currentWords, isFinished) {
-        if (isFinished) {
-            clearTransitionState()
-            return@LaunchedEffect
-        }
-        // A recreation can interrupt an animation after its answer was accepted.
-        // Apply the saved action once, then start the restored card without animation.
-        if (!currentCardExiting && (pendingDragResult != null || pendingSkipTransition)) {
-            val result = pendingDragResult
-            val skip = pendingSkipTransition
-            clearTransitionState()
-            if (result != null) processResult(result)
-            else if (skip) processSkip()
-            return@LaunchedEffect
-        }
-        currentCardExiting = false
-        pendingDragResult = null
-        pendingSkipTransition = false
-        if (interactionLocked) {
-            withFrameNanos { }
-            interactionLocked = false
-        }
+    fun shuffleRemaining() {
+        val seen = currentWords.take(currentIndex)
+        val remaining = currentWords.drop(currentIndex).shuffled()
+        currentWords = seen + remaining
     }
 
     fun startSwipe(
@@ -209,7 +173,7 @@ fun FlashcardScreen(
         exitDurationMillis: Int = 600
     ) {
         val word = currentWords.getOrNull(currentIndex) ?: return
-        if (isFinished || currentCardExiting || interactionLocked) return
+        if (isFinished) return
 
         val hasNextCard = currentIndex < currentWords.lastIndex
         if (isSkip && !hasNextCard) return
@@ -229,27 +193,24 @@ fun FlashcardScreen(
             showBoth = showBothGlobal,
             showTranslation = showTranslation
         )
-        currentCardExiting = true
-        interactionLocked = true
-
+        // Commit progress at release. Animation callbacks only remove visual copies
+        // of outgoing cards, so shuffle and recreation cannot cancel an answer.
         if (isSkip) {
-            pendingSkipTransition = true
+            processSkip()
         } else {
-            pendingDragResult = swipedRight
-            if (!hasNextCard) {
-                screenScope.launch {
-                    kotlinx.coroutines.delay(exitDurationMillis.toLong())
-                    val result = pendingDragResult
-                    pendingDragResult = null
-                    if (result != null) processResult(result)
-                    currentCardExiting = false
+            if (isTestMode) {
+                onWordLearned(word, swipedRight)
+                unlearnedWordsInSession = if (swipedRight) {
+                    unlearnedWordsInSession - word
+                } else {
+                    unlearnedWordsInSession + word
                 }
             }
+            advanceToNextCard()
         }
     }
 
     fun startButtonSwipe(swipedRight: Boolean, isSkip: Boolean = false) {
-        if (currentCardExiting || interactionLocked) return
         startSwipe(
             swipedRight,
             targetY = if (isSkip) 2500f else -2500f,
@@ -307,9 +268,7 @@ fun FlashcardScreen(
                             )
                         }
                         IconButton(onClick = {
-                            val seen = currentWords.take(currentIndex)
-                            val remaining = currentWords.drop(currentIndex).shuffled()
-                            currentWords = seen + remaining
+                            shuffleRemaining()
                         }) {
                             Icon(Icons.Default.Shuffle, contentDescription = "Shuffle remaining")
                         }
@@ -326,7 +285,7 @@ fun FlashcardScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                if (isFinished) {
+                if (isFinished && exitingCards.isEmpty()) {
                     FinishedScreen(
                         theme = theme,
                         isTestMode = isTestMode,
@@ -397,7 +356,7 @@ fun FlashcardScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         val nextIndex = currentIndex + 1
-                        if (nextIndex < currentWords.size) {
+                        if (!isFinished && nextIndex < currentWords.size) {
                             key(currentWords[nextIndex].id) {
                                 Flashcard(
                                     key = nextIndex,
@@ -408,29 +367,12 @@ fun FlashcardScreen(
                                     showBoth = showBothGlobal,
                                     onClick = {},
                                     onSwipe = {},
-                                    isBackground = true,
-                                    triggerPop = poppedCardId == currentWords[nextIndex].id,
-                                    onPopComplete = {
-                                        when {
-                                            pendingDragResult != null -> {
-                                                val result = pendingDragResult!!
-                                                pendingDragResult = null
-                                                processResult(result)
-                                            }
-                                            pendingSkipTransition -> {
-                                                pendingSkipTransition = false
-                                                processSkip()
-                                            }
-                                        }
-                                        if (pendingDragResult == null && !pendingSkipTransition) {
-                                            currentCardExiting = false
-                                        }
-                                    }
+                                    isBackground = true
                                 )
                             }
                         }
 
-                        if (!currentCardExiting) {
+                        if (!isFinished) {
                             key(currentWord.id) {
                                 Flashcard(
                                     key = currentIndex,
@@ -442,7 +384,7 @@ fun FlashcardScreen(
                                     showBoth = showBothGlobal,
                                     onClick = { showTranslation = !showTranslation },
                                     onSwipe = {},
-                                    isInputEnabled = !interactionLocked,
+                                    triggerPop = poppedCardId == currentWord.id,
                                     onSwipeReleased = { swipedRight, startX, startY, targetX, targetY ->
                                         startSwipe(swipedRight, startX, startY, targetX, targetY)
                                     },
@@ -621,8 +563,9 @@ fun Flashcard(
 ) {
     val offsetX = remember(word, key) { Animatable(initialOffsetX) }
     val offsetY = remember(word, key) { Animatable(initialOffsetY) }
-    val alpha = remember(word, key) { Animatable(if (isBackground && !triggerPop) 0.58f else 1f) }
-    val scale = remember(word, key) { Animatable(if (isBackground && !triggerPop) 0.92f else 1f) }
+    val alpha = remember(word, key) { Animatable(1f) }
+    val scale = remember(word, key) { Animatable(if (isBackground || triggerPop) 0.92f else 1f) }
+    val promotion = remember(word, key) { Animatable(if (isBackground || triggerPop) 0f else 1f) }
     val rotation = offsetX.value / 10f
     val scope = rememberCoroutineScope()
 
@@ -634,8 +577,22 @@ fun Flashcard(
     val currentOnAnimationComplete by rememberUpdatedState(onAnimationComplete)
 
     val surfaceColor = MaterialTheme.colorScheme.surfaceVariant
+    val dimmedSurfaceColor = surfaceColor.copy(alpha = 0.58f).compositeOver(MaterialTheme.colorScheme.background)
     val swipeRightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f).compositeOver(surfaceColor)
     val swipeLeftColor = MaterialTheme.colorScheme.error.copy(alpha = 0.15f).compositeOver(surfaceColor)
+    val targetSurfaceColor = when {
+        !isBackground && isTestMode && offsetX.value > 100f -> swipeRightColor
+        !isBackground && isTestMode && offsetX.value < -100f -> swipeLeftColor
+        else -> surfaceColor
+    }
+    val cardSurfaceColor = lerp(dimmedSurfaceColor, targetSurfaceColor, promotion.value)
+    val textOpacity = 0.58f + 0.42f * promotion.value
+    // Explicit, opaque text colors avoid both Material's default color switching
+    // at the final surface color and a text layer changing compositing at alpha 1.
+    val frontColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = textOpacity)
+        .compositeOver(cardSurfaceColor)
+    val backColor = MaterialTheme.colorScheme.primary.copy(alpha = textOpacity)
+        .compositeOver(cardSurfaceColor)
     val cardShape = MaterialTheme.shapes.medium
 
     val frontText = if (isFlipped) word.translation else word.original
@@ -664,18 +621,18 @@ fun Flashcard(
     }
 
     LaunchedEffect(isBackground, triggerPop) {
-        if (isBackground && triggerPop) {
+        if (triggerPop) {
             coroutineScope {
                 launch { scale.animateTo(1f, animationSpec = tween(350, easing = FastOutSlowInEasing)) }
-                launch { alpha.animateTo(1f, animationSpec = tween(350, easing = FastOutSlowInEasing)) }
+                launch { promotion.animateTo(1f, animationSpec = tween(350, easing = FastOutSlowInEasing)) }
             }
             currentOnPopComplete()
         } else if (isBackground) {
             launch { scale.snapTo(0.92f) }
-            launch { alpha.snapTo(0.58f) }
+            launch { promotion.snapTo(0f) }
         } else {
             launch { scale.snapTo(1f) }
-            launch { alpha.snapTo(1f) }
+            launch { promotion.snapTo(1f) }
         }
     }
 
@@ -761,11 +718,10 @@ fun Flashcard(
             ),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = when {
-                !isBackground && isTestMode && offsetX.value > 100f -> swipeRightColor
-                !isBackground && isTestMode && offsetX.value < -100f -> swipeLeftColor
-                else -> surfaceColor
-            }
+            // Animate an opaque tint rather than the card layer's transparency,
+            // so the next card's text stays hidden throughout the promotion.
+            containerColor = cardSurfaceColor,
+            contentColor = frontColor
         )
     ) {
         Box(
@@ -797,7 +753,7 @@ fun Flashcard(
             Text(
                 text = backText,
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = backColor,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .padding(16.dp)

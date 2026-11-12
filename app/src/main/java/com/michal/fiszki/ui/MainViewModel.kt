@@ -14,6 +14,7 @@ import com.michal.fiszki.data.repository.ThemeRepository
 import com.michal.fiszki.data.repository.WordRepository
 import com.michal.fiszki.model.*
 import com.michal.fiszki.getBatches
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -312,11 +313,11 @@ class MainViewModel(
         }
     }
 
-    fun importFromJson(jsonString: String) {
+    fun importLanguage(readJson: () -> String) {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             try {
-                val imported = json.decodeFromString<ImportLanguage>(jsonString)
+                val imported = json.decodeFromString<ImportLanguage>(readJson())
                 
                 val langName = imported.name ?: imported.language?.name ?: "UNKNOWN"
                 val langDisplayName = imported.displayName ?: imported.language?.displayName ?: langName
@@ -435,6 +436,8 @@ class MainViewModel(
                     loadDataForLanguage(language)
                 }
                 
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
                 _operationMessages.emit("Could not import language: ${e.message ?: "Invalid file"}")
@@ -480,6 +483,21 @@ class MainViewModel(
             )
         }
         json.encodeToString(archive)
+    }
+
+    fun loadBackupForRestore(readJson: () -> String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isLoading.value = true
+            try {
+                prepareBackupRestore(readJson())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _operationMessages.emit("Could not read backup: ${e.message ?: "Unknown error"}")
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 
     fun prepareBackupRestore(jsonString: String) {

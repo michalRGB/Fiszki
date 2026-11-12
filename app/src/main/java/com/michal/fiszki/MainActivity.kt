@@ -102,18 +102,17 @@ fun MainScreen(viewModel: MainViewModel, onVolumeControlsChanged: (Boolean) -> U
     val mainThemeListState = rememberLazyListState()
     val subThemeListState = rememberLazyListState()
     val context = LocalContext.current
+    val contentResolver = context.applicationContext.contentResolver
     val scope = rememberCoroutineScope()
 
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            try {
-                val jsonString = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { it.readText() }
-                if (jsonString == null) Toast.makeText(context, "Could not read selected file", Toast.LENGTH_LONG).show()
-                else viewModel.importFromJson(jsonString)
-            } catch (e: Exception) {
-                Toast.makeText(context, "Could not read file: ${e.message}", Toast.LENGTH_LONG).show()
+            viewModel.importLanguage {
+                val inputStream = contentResolver.openInputStream(it)
+                    ?: error("Could not open selected file")
+                inputStream.bufferedReader().use { reader -> reader.readText() }
             }
         }
     }
@@ -142,15 +141,10 @@ fun MainScreen(viewModel: MainViewModel, onVolumeControlsChanged: (Boolean) -> U
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            try {
-                val inputStream = context.contentResolver.openInputStream(it)
-                if (inputStream == null) {
-                    Toast.makeText(context, "Could not open selected backup", Toast.LENGTH_LONG).show()
-                } else {
-                    viewModel.prepareBackupRestore(inputStream.bufferedReader().use { it.readText() })
-                }
-            } catch (e: Exception) {
-                Toast.makeText(context, "Could not read backup: ${e.message}", Toast.LENGTH_LONG).show()
+            viewModel.loadBackupForRestore {
+                val inputStream = contentResolver.openInputStream(it)
+                    ?: error("Could not open selected backup")
+                inputStream.bufferedReader().use { reader -> reader.readText() }
             }
         }
     }

@@ -786,6 +786,7 @@ fun FinishedScreen(
     onBack: () -> Unit
 ) {
     var showForceAdvanceDialog by remember { mutableStateOf(false) }
+    val completesBasket = isBasket && CycleConfig.isFinalBasketStage(theme.status)
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -848,7 +849,7 @@ fun FinishedScreen(
             if (isTestMode) {
                 if (unlearnedCount == 0) {
                     // Success: Mastery reached
-                    val buttonText = if (isBasket && CycleConfig.isFinalBasketStage(theme.status)) "Complete the basket" else "Complete stage"
+                    val buttonText = if (completesBasket) "Complete the basket" else "Complete stage"
                     Button(
                         onClick = onFinishSession,
                         modifier = Modifier.fillMaxWidth()
@@ -896,8 +897,14 @@ fun FinishedScreen(
     if (showForceAdvanceDialog) {
         AlertDialog(
             onDismissRequest = { showForceAdvanceDialog = false },
-            title = { Text("Force Advance Stage?") },
-            text = { Text("You haven't mastered all words yet. If you proceed, the $unlearnedCount missed words will remain in this theme but the stage will be advanced.") },
+            title = { Text(if (completesBasket) "Complete the basket?" else "Force Advance Stage?") },
+            text = {
+                Text(if (completesBasket) {
+                    "Completing this basket will return all its words, including missed words, to their original themes."
+                } else {
+                    "You haven't mastered all words yet. If you proceed, the $unlearnedCount missed words will remain in this ${if (isBasket) "basket" else "theme"} but the stage will be advanced."
+                })
+            },
             confirmButton = {
                 Button(
                     onClick = {

@@ -433,7 +433,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     },
                     onSessionFinished = { unlearnedInSession, forceAdvance ->
                         if (isBasketMode && subTheme.isInProgress) {
-                            if (unlearnedInSession.isEmpty()) {
+                            if (unlearnedInSession.isEmpty() || forceAdvance) {
                                 if (CycleConfig.isFinalBasketStage(subTheme.status)) {
                                     viewModel.completeBasketPart(subTheme.categoryId)
                                 } else {

@@ -66,7 +66,7 @@ The regular schedule belongs to each theme batch. In Learning 1–4, a failed te
 
 The basket is a second, independent review track, not a replacement for the regular theme schedule. A word stays associated with its original theme and batch, while its basket membership and basket learning status are tracked separately. Adding words to the basket therefore does not stop the theme batch from advancing.
 
-Basket batches have their own progress and use the same interval configuration, but their cycle ends after Learning 3 instead of continuing into maintenance. A successful test advances the basket batch; if any words are missed, the batch stays at its current stage so those words can be retried. Once every word passes the Learning 3 test, the batch is cleared from the basket. Words can also be removed manually.
+Basket batches have their own progress and use the same interval configuration, but their cycle ends after Learning 4 instead of continuing into maintenance. A successful test advances the basket batch; if any words are missed, the batch stays at its current stage so those words can be retried. Once every word passes the Learning 3 test, the batch is cleared from the basket. Words can also be removed manually.
 
 ### Batching
 

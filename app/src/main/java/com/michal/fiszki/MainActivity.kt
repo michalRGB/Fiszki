@@ -192,7 +192,7 @@ fun MainScreen(viewModel: MainViewModel) {
         if (basketWords.isEmpty()) emptyList()
         else {
             val progressList = progressMap[-1] ?: emptyList()
-            getBatches("Basket List", basketWords).mapIndexed { index, theme ->
+            getBasketBatches(basketWords).mapIndexed { index, theme ->
                 val p = progressList.find { it.partIndex == index }
                 theme.copy(
                     id = -1,
@@ -410,7 +410,7 @@ fun MainScreen(viewModel: MainViewModel) {
 
             if (subTheme != null) {
                 val allFlashcardWords = if (isBasketMode) {
-                    getWordsForBatch((selectedSubThemePartIndex ?: 0) + 1, savedUnlearnedWords)
+                    getWordsForBasket((selectedSubThemePartIndex ?: 0) + 1, savedUnlearnedWords)
                 } else {
                     val themeWords = wordsMap[subTheme.id] ?: emptyList()
                     getWordsForBatch(subTheme.categoryId + 1, themeWords).filter { !it.isInBasket }
@@ -511,7 +511,7 @@ fun MainScreen(viewModel: MainViewModel) {
 
             if (subTheme != null) {
                 val themeWords = if (isBasketMode) {
-                    getWordsForBatch(partIdx + 1, savedUnlearnedWords)
+                    getWordsForBasket(partIdx + 1, savedUnlearnedWords)
                 } else {
                     val allWords = wordsMap[subTheme.id] ?: emptyList()
                     getWordsForBatch(subTheme.categoryId + 1, allWords).filter { !it.isInBasket }
@@ -581,6 +581,8 @@ fun MainScreen(viewModel: MainViewModel) {
                         navigateBack()
                     }
                 )
+            } else {
+                SideEffect { navigateBack() }
             }
         }
     }

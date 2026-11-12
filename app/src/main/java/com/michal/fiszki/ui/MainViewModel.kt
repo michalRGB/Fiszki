@@ -246,11 +246,8 @@ class MainViewModel(
     fun removeWordFromBasket(word: Word) {
         viewModelScope.launch(Dispatchers.IO) {
             database.withTransaction {
-                wordRepository.updateWord(word.copy(
-                    isInBasket = false,
-                    basketStatus = LearningStatus.UNCHECKED,
-                    basketAddedDate = null
-                ))
+                wordRepository.removeWordFromBasket(word.id)
+                themeRepository.deleteEmptyBasketProgress()
             }
         }
     }

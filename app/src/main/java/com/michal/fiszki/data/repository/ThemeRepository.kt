@@ -98,6 +98,10 @@ class ThemeRepository(private val dao: ThemeDao) {
         dao.deleteBasketProgress(partIndex)
     }
 
+    suspend fun deleteEmptyBasketProgress() {
+        dao.deleteEmptyBasketProgress()
+    }
+
     suspend fun shiftBasketProgress(deletedIndex: Int) {
         dao.shiftBasketProgress(deletedIndex)
     }

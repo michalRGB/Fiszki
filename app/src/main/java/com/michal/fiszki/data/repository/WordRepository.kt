@@ -2,7 +2,7 @@ package com.michal.fiszki.data.repository
 
 import com.michal.fiszki.data.WordDao
 import com.michal.fiszki.data.WordEntity
-import com.michal.fiszki.getWordsForBatch
+import com.michal.fiszki.getWordsForBasket
 import com.michal.fiszki.model.Word
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -11,10 +11,14 @@ class WordRepository(private val dao: WordDao) {
 
     // Call inside the transaction that also removes and shifts basket progress.
     suspend fun clearBasketPart(partIndex: Int): Boolean {
-        val wordIds = getWordsForBatch(partIndex + 1, dao.getAllBasketWordIds())
+        val wordIds = getWordsForBasket(partIndex + 1, dao.getAllBasketWordIds())
         if (wordIds.isEmpty()) return false
         dao.removeWordsFromBasket(wordIds)
         return true
+    }
+
+    suspend fun removeWordFromBasket(wordId: Int) {
+        dao.removeWordsFromBasket(listOf(wordId))
     }
 
     suspend fun updateWordStatus(word: Word, isBasket: Boolean) {

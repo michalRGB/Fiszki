@@ -91,9 +91,13 @@ class BasketCompletionTest {
     }
 
     @Test
-    fun completingMergedFinalBasketAndThenLastBasketRemovesAllBasketProgress() = runBlocking {
+    fun completingSmallFinalBasketAndThenRemainingBasketsRemovesAllBasketProgress() = runBlocking {
         seedWords(119)
-        database.themeDao().insertProgressList((0..1).map { progress(it, ThemeStatus.LEARNING_STAGE_3) })
+        database.themeDao().insertProgressList((0..2).map { progress(it, ThemeStatus.LEARNING_STAGE_3) })
+
+        completeBasket(2)
+        assertEquals((1..100).toList(), database.wordDao().getAllBasketWordIds())
+        assertEquals(listOf(0, 1), database.themeDao().getProgressForThemeSuspend(-1).map { it.partIndex }.sorted())
 
         completeBasket(1)
         assertEquals((1..50).toList(), database.wordDao().getAllBasketWordIds())
@@ -103,6 +107,55 @@ class BasketCompletionTest {
         assertTrue(database.wordDao().getAllBasketWordIds().isEmpty())
         assertTrue(database.themeDao().getAllProgressForLanguage("test").first().isEmpty())
         assertFalse(wordRepository.clearBasketPart(0))
+    }
+
+    @Test
+    fun deletingAWordFillsFirstBasketAndDeletesOnlyEmptyTailProgress() = runBlocking {
+        val words = seedWords(51)
+        val first = progress(0, ThemeStatus.LEARNING_STAGE_2).copy(isInProgress = true)
+        val second = progress(1, ThemeStatus.LEARNING_STAGE_1)
+        val regular = first.copy(themeId = 1)
+        database.themeDao().insertProgressList(listOf(first, second, regular))
+        val removedWord = wordRepository.getAllBasketWords().first().first()
+
+        withLoadedViewModel { viewModel ->
+            // The supplied word is stale; removing it must preserve its current regular status.
+            database.wordDao().updateWordStatus(removedWord.id, LearningStatus.NOT_LEARNED)
+            withContext(Dispatchers.Main) { viewModel.removeWordFromBasket(removedWord) }
+            withTimeout(5_000) {
+                viewModel.basketWords.first { it.size == 50 }
+                viewModel.progress.first { it[-1]?.size == 1 }
+            }
+
+            val remaining = viewModel.basketWords.value
+            assertEquals(listOf(50), getBasketBatches(remaining).map { it.wordCount })
+            assertEquals((2..51).toList(), getWordsForBasket(1, remaining).map { it.id })
+            assertEquals(listOf(first), database.themeDao().getProgressForThemeSuspend(-1))
+            assertEquals(listOf(regular), database.themeDao().getProgressForThemeSuspend(1))
+            assertEquals(words.drop(1), database.wordDao().getAllWordsSuspend().filter { it.isInBasket })
+            assertEquals(LearningStatus.NOT_LEARNED, database.wordDao().getAllWordsSuspend().first().status)
+
+            database.wordDao().insertWords(listOf(words.last().copy(id = 52)))
+            withTimeout(5_000) { viewModel.basketWords.first { it.size == 51 } }
+            assertEquals(listOf(50, 1), getBasketBatches(viewModel.basketWords.value).map { it.wordCount })
+            assertEquals(listOf(first), database.themeDao().getProgressForThemeSuspend(-1))
+        }
+    }
+
+    @Test
+    fun manuallyRemovingLastWordDeletesBasketProgress() = runBlocking {
+        seedWords(1)
+        database.themeDao().insertProgressList(listOf(progress(0, ThemeStatus.LEARNING_STAGE_3)))
+
+        withLoadedViewModel { viewModel ->
+            val word = viewModel.basketWords.value.single()
+            withContext(Dispatchers.Main) { viewModel.removeWordFromBasket(word) }
+            withTimeout(5_000) {
+                viewModel.basketWords.first { it.isEmpty() }
+                viewModel.progress.first { !it.containsKey(-1) }
+            }
+            assertTrue(database.themeDao().getProgressForThemeSuspend(-1).isEmpty())
+        }
     }
 
     @Test
@@ -154,6 +207,26 @@ class BasketCompletionTest {
             assertTrue(wordRepository.clearBasketPart(partIndex))
             themeRepository.deleteBasketProgress(partIndex)
             themeRepository.shiftBasketProgress(partIndex)
+        }
+    }
+
+    private suspend fun withLoadedViewModel(block: suspend (MainViewModel) -> Unit) {
+        val store = ViewModelStore()
+        val viewModel = withContext(Dispatchers.Main) {
+            MainViewModel(database, themeRepository, wordRepository,
+                LanguageRepository(database.languageDao())).also {
+                store.put("main", it)
+                it.selectLanguage(Language("test", "Test", ""))
+            }
+        }
+        try {
+            withTimeout(5_000) {
+                viewModel.basketWords.first { it.isNotEmpty() }
+                viewModel.progress.first { it.containsKey(-1) }
+            }
+            block(viewModel)
+        } finally {
+            withContext(Dispatchers.Main) { store.clear() }
         }
     }
 

@@ -3,8 +3,15 @@ package com.michal.fiszki
 import com.michal.fiszki.model.Theme
 import com.michal.fiszki.model.Word
 
-fun getBatches(themeName: String, words: List<Word>): List<Theme> {
-    val chunks = getChunkedWords(words)
+private const val BATCH_SIZE = 50
+
+fun getBatches(themeName: String, words: List<Word>): List<Theme> =
+    createBatchThemes(themeName, getChunkedWords(words))
+
+fun getBasketBatches(words: List<Word>): List<Theme> =
+    createBatchThemes("Basket List", words.chunked(BATCH_SIZE))
+
+private fun createBatchThemes(themeName: String, chunks: List<List<Word>>): List<Theme> {
     return chunks.mapIndexed { index, batch ->
         Theme(
             id = 0,
@@ -15,6 +22,9 @@ fun getBatches(themeName: String, words: List<Word>): List<Theme> {
     }
 }
 
+fun <T> getWordsForBasket(batchIndex: Int, words: List<T>): List<T> =
+    words.chunked(BATCH_SIZE).getOrNull(batchIndex - 1) ?: emptyList()
+
 fun <T> getWordsForBatch(batchIndex: Int, words: List<T>): List<T> {
     val chunks = getChunkedWords(words)
     return chunks.getOrNull(batchIndex - 1) ?: emptyList()
@@ -22,7 +32,7 @@ fun <T> getWordsForBatch(batchIndex: Int, words: List<T>): List<T> {
 
 private fun <T> getChunkedWords(words: List<T>): List<List<T>> {
     if (words.isEmpty()) return emptyList()
-    val chunks = words.chunked(50).toMutableList()
+    val chunks = words.chunked(BATCH_SIZE).toMutableList()
     if (chunks.size > 1 && chunks.last().size < 20) {
         val last = chunks.removeAt(chunks.size - 1)
         val prev = chunks.removeAt(chunks.size - 1)

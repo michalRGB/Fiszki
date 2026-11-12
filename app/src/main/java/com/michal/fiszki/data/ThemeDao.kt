@@ -55,6 +55,12 @@ interface ThemeDao {
     @Query("DELETE FROM theme_progress WHERE themeId = -1 AND partIndex = :partIndex")
     suspend fun deleteBasketProgress(partIndex: Int)
 
+    @Query("""
+        DELETE FROM theme_progress WHERE themeId = -1 AND partIndex >=
+        (SELECT (COUNT(*) + 49) / 50 FROM words WHERE isInBasket = 1)
+    """)
+    suspend fun deleteEmptyBasketProgress()
+
     @Transaction
     suspend fun shiftBasketProgress(deletedIndex: Int) {
         val toShift = getProgressForThemeSuspend(-1)

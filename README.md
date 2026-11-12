@@ -70,7 +70,9 @@ Basket batches have their own progress and use the same interval configuration, 
 
 ### Batching
 
-Themes with many words are split into batches of 50. If the last batch contains fewer than 20 words, it is merged with the previous batch. Schedule progress is tracked separately for each batch.
+Themes with many words are split into batches of 50. If the last theme batch contains fewer than 20 words, it is merged with the previous batch. Schedule progress is tracked separately for each batch.
+
+Basket batches contain at most 50 words, even when the final basket has only one word. Removing a word pulls later words forward to fill the gap. Each remaining basket keeps its stage and review dates, and words that move forward join that basket's stage. Empty final baskets and their progress are removed. Completing an entire basket renumbers later baskets while preserving their progress.
 
 ## Import and Backups
 

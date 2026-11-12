@@ -587,7 +587,6 @@ fun MainScreen(viewModel: MainViewModel, onVolumeControlsChanged: (Boolean) -> U
                         }
                         selectedSubThemePartIndex = null
                         isBasketMode = false
-                        navigateBack()
                     }
                 )
             } else {

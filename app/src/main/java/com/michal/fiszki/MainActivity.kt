@@ -197,6 +197,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 theme.copy(
                     id = -1,
                     status = p?.status ?: ThemeStatus.NOT_STARTED,
+                    lastCompletedDate = p?.lastCompletedDate,
                     nextAvailableDate = p?.nextAvailableDate,
                     isInProgress = p?.isInProgress ?: false,
                     categoryId = index
@@ -425,7 +426,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     onBack = { navigateBack() },
                     onWordLearned = { word, learned ->
                         if (isBasketMode) {
-                            viewModel.updateWordStatus(word.copy(basketStatus = if (learned) LearningStatus.LEARNED else LearningStatus.NOT_LEARNED))
+                            viewModel.updateWordStatus(word.copy(basketStatus = if (learned) LearningStatus.LEARNED else LearningStatus.NOT_LEARNED), isBasket = true)
                         } else {
                             viewModel.updateWordStatus(word.copy(status = if (learned) LearningStatus.LEARNED else LearningStatus.NOT_LEARNED))
                         }
@@ -433,8 +434,8 @@ fun MainScreen(viewModel: MainViewModel) {
                     onSessionFinished = { unlearnedInSession, forceAdvance ->
                         if (isBasketMode && subTheme.isInProgress) {
                             if (unlearnedInSession.isEmpty()) {
-                                if (subTheme.status == ThemeStatus.LEARNING_STAGE_3) {
-                                    viewModel.completeBasketPart(subTheme.categoryId, flashcardWords!!)
+                                if (CycleConfig.isFinalBasketStage(subTheme.status)) {
+                                    viewModel.completeBasketPart(subTheme.categoryId)
                                 } else {
                                     val (nextStatus, interval) = CycleConfig.getNextStage(subTheme.status)
                                     viewModel.advanceStage(
@@ -446,7 +447,7 @@ fun MainScreen(viewModel: MainViewModel) {
                                             nextAvailableDate = LocalDate.now().plus(interval),
                                             isInProgress = false
                                         ),
-                                        wordsToReset = flashcardWords!!
+                                        wordsToReset = allFlashcardWords
                                     )
                                 }
                             } else {
@@ -559,8 +560,8 @@ fun MainScreen(viewModel: MainViewModel) {
                         viewModel.removeWordFromBasket(word)
                     },
                     onClearBasket = {
-                        if (subTheme.status == ThemeStatus.LEARNING_STAGE_3) {
-                            viewModel.completeBasketPart(subTheme.categoryId, themeWords)
+                        if (CycleConfig.isFinalBasketStage(subTheme.status)) {
+                            viewModel.completeBasketPart(subTheme.categoryId)
                         } else {
                             val (nextStatus, interval) = CycleConfig.getNextStage(subTheme.status)
                             viewModel.advanceStage(
@@ -583,34 +584,4 @@ fun MainScreen(viewModel: MainViewModel) {
             }
         }
     }
-}
-
-fun getBatches(themeName: String, words: List<Word>): List<Theme> {
-    val chunks = getChunkedWords(words)
-    if (chunks.isEmpty()) return emptyList()
-    return chunks.mapIndexed { index, batch ->
-        Theme(
-            id = 0,
-            name = if (chunks.size == 1) themeName else "$themeName (Part ${index + 1})",
-            wordCount = batch.size,
-            basketCount = batch.count { it.isInBasket }
-        )
-    }
-}
-
-fun getWordsForBatch(batchIndex: Int, words: List<Word>): List<Word> {
-    val chunks = getChunkedWords(words)
-    return if (batchIndex > 0 && batchIndex <= chunks.size) chunks[batchIndex - 1] else emptyList()
-}
-
-private fun getChunkedWords(words: List<Word>): List<List<Word>> {
-    if (words.isEmpty()) return emptyList()
-    val batchSize = 50
-    val chunks = words.chunked(batchSize).toMutableList()
-    if (chunks.size > 1 && chunks.last().size < 20) {
-        val last = chunks.removeAt(chunks.size - 1)
-        val prev = chunks.removeAt(chunks.size - 1)
-        chunks.add(prev + last)
-    }
-    return chunks
 }

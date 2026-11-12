@@ -221,7 +221,7 @@ class MainViewModel(
             val progressJob = launch {
                 themeRepository.getAllProgressForLanguage(language.name).collect { allProgress ->
                     val groupedProgress = allProgress.groupBy { it.themeId }
-                    _progress.update { it + groupedProgress }
+                    _progress.value = groupedProgress
                 }
             }
             val basketJob = launch {
@@ -236,9 +236,9 @@ class MainViewModel(
         }
     }
 
-    fun updateWordStatus(word: Word) {
+    fun updateWordStatus(word: Word, isBasket: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
-            wordRepository.updateWord(word)
+            wordRepository.updateWordStatus(word, isBasket)
         }
     }
 
@@ -286,16 +286,10 @@ class MainViewModel(
         }
     }
 
-    fun completeBasketPart(partIndex: Int, words: List<Word>) {
+    fun completeBasketPart(partIndex: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             database.withTransaction {
-                wordRepository.updateWords(words.map { word ->
-                    word.copy(
-                        isInBasket = false,
-                        basketStatus = LearningStatus.UNCHECKED,
-                        basketAddedDate = null
-                    )
-                })
+                if (!wordRepository.clearBasketPart(partIndex)) return@withTransaction
                 themeRepository.deleteBasketProgress(partIndex)
                 themeRepository.shiftBasketProgress(partIndex)
             }

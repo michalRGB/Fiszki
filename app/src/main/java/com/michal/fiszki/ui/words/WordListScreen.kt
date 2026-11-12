@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
 import com.michal.fiszki.model.LearningStatus
+import com.michal.fiszki.model.CycleConfig
 import com.michal.fiszki.model.Theme
 import com.michal.fiszki.model.ThemeStatus
 import com.michal.fiszki.model.Word
@@ -135,7 +136,7 @@ fun WordListScreen(
 
                             if (isBasket && allLearned) {
                                 Spacer(Modifier.height(12.dp))
-                                val buttonText = if (theme.status == ThemeStatus.LEARNING_STAGE_4) "Complete the basket" else "Complete Stage"
+                                val buttonText = if (CycleConfig.isFinalBasketStage(theme.status)) "Complete the basket" else "Complete Stage"
                                 Button(
                                     onClick = onClearBasket
                                 ) {

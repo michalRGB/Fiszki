@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.michal.fiszki.model.LearningStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -24,8 +25,20 @@ interface WordDao {
     @Query("SELECT * FROM words WHERE themeId = :themeId AND (subtheme IS NULL OR subtheme = :themeName)")
     fun getDirectWordsForTheme(themeId: Int, themeName: String): Flow<List<WordEntity>>
 
-    @Query("SELECT * FROM words WHERE isInBasket = 1 ORDER BY basketAddedDate ASC")
+    @Query("SELECT * FROM words WHERE isInBasket = 1 ORDER BY basketAddedDate ASC, id ASC")
     fun getAllBasketWords(): Flow<List<WordEntity>>
+
+    @Query("SELECT id FROM words WHERE isInBasket = 1 ORDER BY basketAddedDate ASC, id ASC")
+    suspend fun getAllBasketWordIds(): List<Int>
+
+    @Query("UPDATE words SET isInBasket = 0, basketStatus = 'UNCHECKED', basketAddedDate = NULL WHERE id IN (:wordIds)")
+    suspend fun removeWordsFromBasket(wordIds: List<Int>)
+
+    @Query("UPDATE words SET status = :status WHERE id = :wordId")
+    suspend fun updateWordStatus(wordId: Int, status: LearningStatus)
+
+    @Query("UPDATE words SET basketStatus = :status WHERE id = :wordId AND isInBasket = 1")
+    suspend fun updateBasketWordStatus(wordId: Int, status: LearningStatus)
 
     @Update
     suspend fun updateWord(word: WordEntity)

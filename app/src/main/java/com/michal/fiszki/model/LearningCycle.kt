@@ -6,6 +6,9 @@ import java.time.LocalTime
 import java.time.Period
 
 object CycleConfig {
+    fun isFinalBasketStage(status: ThemeStatus): Boolean =
+        status.ordinal >= ThemeStatus.LEARNING_STAGE_3.ordinal
+
     /**
      * Given the status (which represents the LAST COMPLETED stage),
      * returns the next stage to be performed and the wait period AFTER that next stage is done.

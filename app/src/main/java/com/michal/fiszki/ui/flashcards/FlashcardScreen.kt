@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.michal.fiszki.model.LearningStatus
+import com.michal.fiszki.model.CycleConfig
 import com.michal.fiszki.model.Theme
 import com.michal.fiszki.model.ThemeStatus
 import com.michal.fiszki.model.Word
@@ -847,7 +848,7 @@ fun FinishedScreen(
             if (isTestMode) {
                 if (unlearnedCount == 0) {
                     // Success: Mastery reached
-                    val buttonText = if (isBasket && theme.status == ThemeStatus.LEARNING_STAGE_3) "Complete the basket" else "Complete stage"
+                    val buttonText = if (isBasket && CycleConfig.isFinalBasketStage(theme.status)) "Complete the basket" else "Complete stage"
                     Button(
                         onClick = onFinishSession,
                         modifier = Modifier.fillMaxWidth()

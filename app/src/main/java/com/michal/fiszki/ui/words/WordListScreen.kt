@@ -214,7 +214,7 @@ fun WordListScreen(
                                     leadingIcon = { Icon(Icons.Default.PlayArrow, null) },
                                     onClick = {
                                         showMenu = false
-                                        onPlayFlashcards(words.drop(firstUncheckedIndex), true, false)
+                                        onPlayFlashcards(unlearnedWords, true, false)
                                     }
                                 )
                                 HorizontalDivider()

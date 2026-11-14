@@ -20,7 +20,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -42,6 +41,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.time.Duration.Companion.milliseconds
 
 private data class ExitingFlashcard(
     val id: Int,
@@ -76,18 +76,18 @@ fun FlashcardScreen(
     onVolumeControlsChanged: (Boolean) -> Unit = {}
 ) {
     val wordsById = remember(words, allWords) { (words + allWords).associateBy { it.id } }
-    val wordListSaver = listSaver<List<Word>, Int>(
+    val wordListSaver = listSaver(
         save = { list -> list.map { it.id } },
         restore = { ids -> ids.mapNotNull { wordsById[it] } }
     )
-    val missedWordsSaver = listSaver<Set<Word>, Int>(
+    val missedWordsSaver = listSaver(
         save = { missed -> missed.map { it.id } },
         restore = { ids -> ids.mapNotNull { wordsById[it] }.toSet() }
     )
     var currentWords by rememberSaveable(stateSaver = wordListSaver) { mutableStateOf(words) }
     var currentIndex by rememberSaveable { mutableIntStateOf(0) }
     var isTestMode by rememberSaveable { mutableStateOf(isTestModeInitially) }
-    var unlearnedWordsInSession by rememberSaveable(stateSaver = missedWordsSaver) { mutableStateOf(setOf<Word>()) }
+    var unlearnedWordsInSession by rememberSaveable(stateSaver = missedWordsSaver) { mutableStateOf(setOf()) }
     var isUnlearnedSession by rememberSaveable { mutableStateOf(isUnlearnedSessionInitially) }
     var showTranslation by rememberSaveable { mutableStateOf(false) }
     var isFinished by rememberSaveable { mutableStateOf(false) }
@@ -640,24 +640,22 @@ fun Flashcard(
     LaunchedEffect(triggerSwipeRight, triggerSwipeLeft, triggerSkip) {
         if (triggerSwipeRight || triggerSwipeLeft || triggerSkip) {
             val isRight = triggerSwipeRight || triggerSkip
-            val isActualSkip = triggerSkip
 
             // triggerSwipeRight (Know/Vol Down) flies to the top right corner.
             // triggerSwipeLeft (Don't Know/Vol Up) flies to the top left corner.
             // triggerSkip (Skip Button) flies to the bottom right corner.
             val targetX = exitTargetX ?: if (isRight) 2500f else -2500f
-            val targetY = exitTargetY ?: if (isActualSkip) 2500f else -2500f
-            val animDuration = animationDurationMillis
+            val targetY = exitTargetY ?: if (triggerSkip) 2500f else -2500f
 
-            launch { offsetX.animateTo(targetX, animationSpec = tween(animDuration, easing = FastOutSlowInEasing)) }
-            launch { offsetY.animateTo(targetY, animationSpec = tween(animDuration, easing = FastOutSlowInEasing)) }
-            if (!isActualSkip || !isTestMode) {
-                launch { alpha.animateTo(0f, animationSpec = tween(animDuration)) }
+            launch { offsetX.animateTo(targetX, animationSpec = tween(animationDurationMillis, easing = FastOutSlowInEasing)) }
+            launch { offsetY.animateTo(targetY, animationSpec = tween(animationDurationMillis, easing = FastOutSlowInEasing)) }
+            if (!triggerSkip || !isTestMode) {
+                launch { alpha.animateTo(0f, animationSpec = tween(animationDurationMillis)) }
             }
 
-            kotlinx.coroutines.delay(animDuration.toLong())
+            kotlinx.coroutines.delay(animationDurationMillis.toLong().milliseconds)
             currentOnAnimationComplete()
-            if (isActualSkip) {
+            if (triggerSkip) {
                 currentOnSkip()
             } else {
                 currentOnSwipe(triggerSwipeRight)

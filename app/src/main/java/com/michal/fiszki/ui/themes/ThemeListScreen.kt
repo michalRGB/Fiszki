@@ -26,7 +26,7 @@ import com.michal.fiszki.model.Theme
 import com.michal.fiszki.model.ThemeStatus
 import java.time.LocalDate
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ThemeListScreen(
     selectedLanguage: Language,
@@ -42,7 +42,7 @@ fun ThemeListScreen(
         save = { theme -> if (theme == null) emptyList() else listOf(theme.id, theme.categoryId) },
         restore = { key -> themes.find { it.id == key.getOrNull(0) && it.categoryId == key.getOrNull(1) } }
     )
-    var themeToOverride by rememberSaveable(stateSaver = overrideThemeSaver) { mutableStateOf<Theme?>(null) }
+    var themeToOverride by rememberSaveable(stateSaver = overrideThemeSaver) { mutableStateOf(null) }
     var showInfoDialog by rememberSaveable { mutableStateOf(false) }
 
     val totalWordCount = remember(themes) { 

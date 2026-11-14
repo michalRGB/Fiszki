@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
+import kotlin.time.Duration.Companion.milliseconds
 
 class MainViewModel(
     private val database: AppDatabase,
@@ -78,7 +79,7 @@ class MainViewModel(
     val learningDate: StateFlow<LocalDate> = flow {
         while (true) {
             emit(CycleConfig.learningDate())
-            delay(1_000)
+            delay(1_000.milliseconds)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CycleConfig.learningDate())
 

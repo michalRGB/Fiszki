@@ -14,7 +14,6 @@ import com.michal.fiszki.model.Theme
 import com.michal.fiszki.model.ThemeStatus
 import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ThemeItem(theme: Theme, isLocked: Boolean, onClick: () -> Unit, onLongClick: () -> Unit = {}) {
     val isBasket = theme.id < 0
